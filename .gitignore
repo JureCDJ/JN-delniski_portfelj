@@ -12,8 +12,8 @@ supabase/.temp/
 supabase/.branches/
 
 # Osebni finančni podatki — nikoli v repozitorij
-data/
-uvozi/
+/data/
+/uvozi/
 *.csv
 *.xlsx
 *.pdf
