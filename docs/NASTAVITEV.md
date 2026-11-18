@@ -26,12 +26,13 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 ## Korak 2 — Orodja za razvoj
 
 ```bash
-brew install node gh supabase/tap/supabase
+brew install node gh
 ```
 
 - `node` — gradnja aplikacije (Vite, React)
 - `gh` — povezava z GitHubom
-- `supabase` — upravljanje baze iz terminala
+- orodje `supabase` je nameščeno v projektu (`npx supabase …`), ker namestitev prek Homebrew
+  zahteva novejša Applova razvijalska orodja
 
 ## Korak 3 — Prijava v GitHub
 
@@ -56,14 +57,16 @@ Skopiraj enkratno kodo in jo potrdi v brskalniku.
 
 ## Korak 5 — Poveži Supabase s terminalom
 
+Orodje Supabase je nameščeno v projektu, zato ukaze zaganjaš z `npx` iz mape projekta.
+
 ```bash
-supabase login
+cd ~/Developer/JN-delniski_portfelj && npx supabase login
 ```
 
 (Odpre brskalnik, potrdiš prijavo.)
 
 ```bash
-cd ~/Developer/JN-delniski_portfelj && supabase link
+npx supabase link
 ```
 
 Izberi projekt `jn-portfelj`. Ko vpraša za **database password**, ga prilepi iz upravitelja gesel

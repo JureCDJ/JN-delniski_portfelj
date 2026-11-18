@@ -23,7 +23,7 @@ omejitev oblikovanja.
 src/ (React 19 + TypeScript + Tailwind 4, Vite, PWA)
   │  supabase-js (prijava + branje/pisanje, zaščiteno z RLS)
   ▼
-Supabase (Frankfurt)
+Supabase (EU, Irska — eu-west-1)
   ├─ Postgres: tabele + Row Level Security (vsak zapis pripada user_id)
   ├─ Auth: prijava z e-poštno povezavo; registracija zaklenjena po prvi prijavi
   ├─ Edge Functions: ibkr-sync, prices-sync, fx-sync (skrivnosti v Supabase Secrets)
