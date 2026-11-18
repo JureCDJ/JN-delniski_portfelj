@@ -1,0 +1,25 @@
+# Odvisnosti in gradnja
+node_modules/
+dist/
+dev-dist/
+*.tsbuildinfo
+
+# Okolje in skrivnosti — nikoli v repozitorij
+.env
+.env.*
+!.env.example
+supabase/.temp/
+supabase/.branches/
+
+# Osebni finančni podatki — nikoli v repozitorij
+data/
+uvozi/
+*.csv
+*.xlsx
+*.pdf
+*.xml
+!docs/**/*.xml
+
+# Sistem
+.DS_Store
+*.log
