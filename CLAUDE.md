@@ -22,6 +22,9 @@ Auth, Edge Functions, pg_cron), regija Frankfurt.
 4. **Shema baze samo prek migracij** v `supabase/migrations/`. Nikoli ročne spremembe v
    nadzorni plošči, ki jih ni v repozitoriju.
 5. **Vsaka tabela ima RLS** z `user_id = auth.uid()`. Nova tabela brez RLS ne sme v produkcijo.
+   Ta projekt Supabase **ne dodeli pravic samodejno** — vsaka nova tabela potrebuje tudi
+   `grant select, insert, update, delete … to authenticated` (sicer »permission denied«;
+   že se je zgodilo). Preveri s `has_table_privilege('authenticated', …)`.
 6. **Skrivnosti nikoli v repozitoriju** (repozitorij je javen): ključ `service_role`, geslo baze,
    žeton IBKR. Edge Functions jih berejo iz Supabase Secrets. Uporabnik jih vpiše sam.
 7. **Davčne stopnje in pravila niso trdo v kodi** — so v `tax_settings` in jih potrdi uporabnik.

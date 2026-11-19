@@ -14,7 +14,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test",
-    "release": "npm run check && vite build"
+    "release": "npm run check && vite build",
+    "uvoz:tabela": "rolldown scripts/uvoz-tabela.ts --format esm --platform node -o node_modules/.cache/uvoz-tabela.mjs && node node_modules/.cache/uvoz-tabela.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.119.1",
