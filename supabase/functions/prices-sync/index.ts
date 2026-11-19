@@ -118,6 +118,29 @@ async function sync(db: SupabaseClient) {
     if (error) throw new Error(`zapis tečajev: ${error.message}`);
   }
 
+  // Zgodovina USD tečajev od najstarejšega posla (za pogled v $: nakupi po tečaju na dan nakupa).
+  const first = await db.from('transactions').select('trade_date').order('trade_date').limit(1);
+  const oldestUsd = await db.from('fx_rates').select('date').eq('currency', 'USD').order('date').limit(1);
+  const start = first.data?.[0]?.trade_date as string | undefined;
+  const have = oldestUsd.data?.[0]?.date as string | undefined;
+  if (start && (!have || have > start)) {
+    const res = await fetch(`https://api.frankfurter.dev/v1/${start}..?from=EUR&to=USD`);
+    if (res.ok) {
+      const body = (await res.json()) as { rates?: Record<string, Record<string, number>> };
+      const hist: Record<string, unknown>[] = [];
+      for (const [date, r] of Object.entries(body.rates ?? {})) {
+        const v = r.USD;
+        if (typeof v === 'number' && v > 0) {
+          for (const user_id of users) hist.push({ user_id, date, currency: 'USD', rate_per_eur: String(v), source: 'ECB' });
+        }
+      }
+      if (hist.length) {
+        const { error } = await db.from('fx_rates').upsert(hist, { onConflict: 'user_id,currency,date' });
+        if (error) throw new Error(`zgodovina tečajev: ${error.message}`);
+      }
+    }
+  }
+
   return {
     posodobljeno: ok.length,
     skupaj: all.length,

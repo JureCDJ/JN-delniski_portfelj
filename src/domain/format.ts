@@ -11,14 +11,26 @@ const num = (digits: number) =>
     useGrouping: 'always',
   });
 
+const usd = new Intl.NumberFormat('sl-SI', { style: 'currency', currency: 'USD', useGrouping: 'always' });
+
+export type DisplayCurrency = 'EUR' | 'USD';
+
 export function formatEur(v: Decimal): string {
   return eur.format(v.toDecimalPlaces(2).toNumber());
 }
 
-export function formatSignedEur(v: Decimal): string {
-  const s = formatEur(v.abs());
+export function formatMoney(v: Decimal, cur: DisplayCurrency = 'EUR'): string {
+  return (cur === 'USD' ? usd : eur).format(v.toDecimalPlaces(2).toNumber());
+}
+
+export function formatSignedMoney(v: Decimal, cur: DisplayCurrency = 'EUR'): string {
+  const s = formatMoney(v.abs(), cur);
   if (v.toDecimalPlaces(2).isZero()) return s;
   return v.isNegative() ? `−${s}` : `+${s}`;
+}
+
+export function formatSignedEur(v: Decimal): string {
+  return formatSignedMoney(v, 'EUR');
 }
 
 export function formatPct(v: Decimal): string {

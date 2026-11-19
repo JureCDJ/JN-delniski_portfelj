@@ -1,4 +1,7 @@
+import Decimal from 'decimal.js';
 import { supabase } from '../lib/supabase';
+import type { Dividend, UsdRate } from '../domain/overview';
+import { validateTaxSettings, type TaxSettings } from '../domain/tax';
 import type { TradeDraft } from '../domain/validation';
 import { buildQuotes, type QuoteInfo } from '../domain/quotes';
 import type { Instrument, Trade } from '../domain/types';
@@ -12,6 +15,13 @@ export interface InstrumentRow extends Instrument {
   priceSymbol: string | null;
 }
 
+export interface TaxSettingsRow {
+  id: string;
+  settings: TaxSettings;
+  confirmed: boolean;
+  sourceNote: string | null;
+}
+
 export interface PortfolioData {
   instruments: InstrumentRow[];
   trades: Trade[];
@@ -19,6 +29,11 @@ export interface PortfolioData {
   /** Datum najnovejše cene v portfelju. */
   pricesDate: string | null;
   missingFx: string[];
+  dividends: Dividend[];
+  /** Ciljne prodajne cene v EUR po ISIN. */
+  targets: Map<string, Decimal>;
+  tax: TaxSettingsRow | null;
+  usdRates: UsdRate[];
 }
 
 /** Datum pred n dnevi (lokalni koledar, brez časovnega pasu). */
@@ -48,15 +63,47 @@ export async function loadPortfolio(): Promise<PortfolioData> {
       .from('prices')
       .select('instrument_id, date, close:close::text, currency, source')
       .gte('date', daysAgo(21)),
-    supabase
-      .from('fx_rates')
-      .select('date, currency, rate_per_eur:rate_per_eur::text')
-      .gte('date', daysAgo(35)),
+    // Vsi tečaji (USD zgodovina za pogled v $ — nakupi po tečaju na dan nakupa).
+    supabase.from('fx_rates').select('date, currency, rate_per_eur:rate_per_eur::text').order('date'),
   ]);
   if (inst.error) fail('Branje instrumentov', inst.error);
   if (tx.error) fail('Branje transakcij', tx.error);
   if (px.error) fail('Branje cen', px.error);
   if (fx.error) fail('Branje tečajev', fx.error);
+
+  const [dv, tg, ts] = await Promise.all([
+    supabase
+      .from('transactions')
+      .select('type, trade_date, amount:amount::text, instrument:instruments(isin)')
+      .in('type', ['DIVIDENDA', 'DAVEK_TUJINA']),
+    supabase.from('targets').select('price_eur:price_eur::text, instrument:instruments(isin)'),
+    supabase.from('tax_settings').select('id, valid_from, settings, source_note, confirmed_at').order('valid_from', { ascending: false }).limit(1),
+  ]);
+  if (dv.error) fail('Branje dividend', dv.error);
+  if (tg.error) fail('Branje ciljev', tg.error);
+  if (ts.error) fail('Branje davčnih nastavitev', ts.error);
+
+  const isinOfRow = (r: { instrument: unknown }) => (r.instrument as { isin: string } | null)?.isin ?? '';
+  const dividends: Dividend[] = dv.data.map((r) => {
+    const amount = new Decimal(r.amount as unknown as string);
+    // Bruto dividenda in tuji davek sta ločeni vrstici; vsota je enaka kot v tabeli.
+    return r.type === 'DIVIDENDA'
+      ? { isin: isinOfRow(r), date: r.trade_date, grossEur: amount, foreignTaxEur: new Decimal(0) }
+      : { isin: isinOfRow(r), date: r.trade_date, grossEur: new Decimal(0), foreignTaxEur: amount };
+  });
+  const targets = new Map(tg.data.map((r) => [isinOfRow(r), new Decimal(r.price_eur as unknown as string)]));
+  const t0 = ts.data[0];
+  let tax: TaxSettingsRow | null = null;
+  if (t0) {
+    try {
+      tax = { id: t0.id, settings: validateTaxSettings(t0.settings as TaxSettings), confirmed: Boolean(t0.confirmed_at), sourceNote: t0.source_note };
+    } catch (e) {
+      throw new Error(`Davčne nastavitve niso veljavne: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  const usdRates: UsdRate[] = fx.data
+    .filter((r) => r.currency === 'USD')
+    .map((r) => ({ date: r.date, rate: new Decimal(r.rate_per_eur as unknown as string) }));
 
   const instruments: InstrumentRow[] = inst.data.map((r) => ({
     id: r.id,
@@ -99,7 +146,31 @@ export async function loadPortfolio(): Promise<PortfolioData> {
     fx.data.map((r) => ({ date: r.date, currency: r.currency, ratePerEur: r.rate_per_eur as unknown as string })),
   );
 
-  return { instruments, trades, quotes, pricesDate: latestDate, missingFx };
+  return {
+    instruments,
+    trades,
+    quotes,
+    pricesDate: latestDate,
+    missingFx,
+    dividends: dividends.filter((d) => d.isin),
+    targets,
+    tax,
+    usdRates,
+  };
+}
+
+/** Ciljna prodajna cena v EUR; null odstrani cilj. */
+export async function saveTarget(instrumentId: string, priceEur: string | null): Promise<void> {
+  const { error } = priceEur
+    ? await supabase.from('targets').upsert({ instrument_id: instrumentId, price_eur: priceEur }, { onConflict: 'instrument_id' })
+    : await supabase.from('targets').delete().eq('instrument_id', instrumentId);
+  if (error) fail('Shranjevanje cilja', error);
+}
+
+/** Lastnik potrdi davčne nastavitve (stopnje, normirane stroške). */
+export async function confirmTaxSettings(id: string): Promise<void> {
+  const { error } = await supabase.from('tax_settings').update({ confirmed_at: new Date().toISOString() }).eq('id', id);
+  if (error) fail('Potrditev davčnih nastavitev', error);
 }
 
 export interface RefreshResult {

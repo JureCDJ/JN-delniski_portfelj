@@ -1,15 +1,25 @@
 import type { Session } from '@supabase/supabase-js';
 import { useCallback, useEffect, useState } from 'react';
-import { loadPortfolio, refreshPrices, saveManualPrice, saveManualTrade, type PortfolioData } from './data/repo';
-import { demoInstruments, demoQuotes, demoTrades } from './demo/demoData';
+import Decimal from 'decimal.js';
+import {
+  confirmTaxSettings,
+  loadPortfolio,
+  refreshPrices,
+  saveManualPrice,
+  saveManualTrade,
+  saveTarget,
+  type PortfolioData,
+} from './data/repo';
+import { demoDividends, demoInstruments, demoQuotes, demoTargets, demoTax, demoTrades, demoUsdRates } from './demo/demoData';
 import type { IsoDate } from './domain/dates';
 import { supabase } from './lib/supabase';
 import { Login } from './ui/Login';
 import { Overview } from './ui/Overview';
 import { PriceForm } from './ui/PriceForm';
+import { TargetForm } from './ui/TargetForm';
 import { TradeForm } from './ui/TradeForm';
 
-export const APP_VERSION = 'v0.3';
+export const APP_VERSION = 'v0.4';
 
 /** Današnji koledarski datum v lokalnem času (ne prek toISOString). */
 function localToday(): IsoDate {
@@ -39,9 +49,30 @@ function Demo({ onExit }: { onExit: () => void }) {
   const [trades, setTrades] = useState(demoTrades);
   const [adding, setAdding] = useState(false);
   const closeForm = useCallback(() => setAdding(false), []);
+  const [targets, setTargets] = useState(demoTargets);
+  const [targeting, setTargeting] = useState<string | null>(null);
+  const closeTarget = useCallback(() => setTargeting(null), []);
+  const targetInst = demoInstruments.find((i) => i.isin === targeting);
+  const targetQuote = demoQuotes.find((q) => q.isin === targeting);
   const today = localToday();
   return (
     <div className={shell}>
+      {targetInst ? (
+        <TargetForm
+          label={`${targetInst.symbol} ${targetInst.name}`}
+          current={targets.get(targetInst.isin) ?? null}
+          priceEur={targetQuote ? new Decimal(targetQuote.price).div(targetQuote.ratePerEur) : null}
+          onClose={closeTarget}
+          onSave={async (price) => {
+            setTargets((m) => {
+              const n = new Map(m);
+              if (price) n.set(targetInst.isin, new Decimal(price));
+              else n.delete(targetInst.isin);
+              return n;
+            });
+          }}
+        />
+      ) : null}
       <Header>
         <button type="button" onClick={() => setAdding(true)} className={btnPrimary}>
           <span aria-hidden="true">＋ </span>Dodaj<span className="hidden sm:inline"> posel</span>
@@ -53,7 +84,17 @@ function Demo({ onExit }: { onExit: () => void }) {
       <div role="note" className="mt-2 rounded-xl bg-warn-bg px-4 py-2.5 text-sm text-warn">
         <strong>Demo podatki.</strong> Izmišljeni posli in tečaji samo za prikaz vmesnika. Kar dodaš tukaj, se ne shrani.
       </div>
-      <Overview trades={trades} instruments={demoInstruments} quotes={demoQuotes} today={today} />
+      <Overview
+        trades={trades}
+        instruments={demoInstruments}
+        quotes={demoQuotes}
+        today={today}
+        dividends={demoDividends}
+        targets={targets}
+        tax={demoTax}
+        usdRates={demoUsdRates}
+        onEditTarget={setTargeting}
+      />
       {adding ? (
         <TradeForm
           today={today}
@@ -126,6 +167,9 @@ function Portfolio({ session }: { session: Session }) {
     </>
   );
   const pricingInst = pricing && data ? data.instruments.find((i) => i.isin === pricing) : undefined;
+  const [targeting, setTargeting] = useState<string | null>(null);
+  const closeTarget = useCallback(() => setTargeting(null), []);
+  const targetInst = targeting && data ? data.instruments.find((i) => i.isin === targeting) : undefined;
 
   return (
     <div className={shell}>
@@ -158,10 +202,40 @@ function Portfolio({ session }: { session: Session }) {
           missingFx={data.missingFx}
           pricesToolbar={pricesToolbar}
           today={today}
+          dividends={data.dividends}
+          targets={data.targets}
+          tax={data.tax}
+          usdRates={data.usdRates}
           onAddTrade={() => setAdding(true)}
           onManualPrice={setPricing}
+          onEditTarget={setTargeting}
+          onConfirmTax={
+            data.tax
+              ? () => {
+                  if (window.confirm('Potrjuješ, da si davčne stopnje preveril in veljajo za tvoj izračun?')) {
+                    void confirmTaxSettings(data.tax!.id).then(reload, (e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)));
+                  }
+                }
+              : undefined
+          }
         />
       )}
+
+      {targetInst && data ? (
+        <TargetForm
+          label={`${targetInst.symbol} ${targetInst.name}`}
+          current={data.targets.get(targetInst.isin) ?? null}
+          priceEur={(() => {
+            const q = data.quotes.find((x) => x.isin === targetInst.isin);
+            return q ? new Decimal(q.price).div(q.ratePerEur) : null;
+          })()}
+          onClose={closeTarget}
+          onSave={async (price) => {
+            await saveTarget(targetInst.id, price);
+            await reload();
+          }}
+        />
+      ) : null}
 
       {pricingInst ? (
         <PriceForm
