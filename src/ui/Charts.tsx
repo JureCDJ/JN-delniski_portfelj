@@ -15,7 +15,7 @@ const SERIES = ['var(--color-s1)', 'var(--color-s2)', 'var(--color-s3)', 'var(--
 const OTHER = 'var(--color-s-other)';
 const ZERO = new Decimal(0);
 
-const compact = new Intl.NumberFormat('sl-SI', { notation: 'compact', maximumFractionDigits: 1 });
+export const compact = new Intl.NumberFormat('sl-SI', { notation: 'compact', maximumFractionDigits: 1 });
 const pct1 = (v: Decimal) => `${v.toDecimalPlaces(1).toString().replace('.', ',')} %`;
 
 function Card({ title, subtitle, actions, children }: { title: string; subtitle?: ReactNode; actions?: ReactNode; children: ReactNode }) {
@@ -214,7 +214,7 @@ function startFor(range: Range, last: IsoDate): IsoDate | null {
 }
 
 /** Širina elementa v px (graf se riše v pravi širini, da pisava ostane berljiva tudi na telefonu). */
-function useWidth(fallback: number): [(el: HTMLDivElement | null) => void, number] {
+export function useWidth(fallback: number): [(el: HTMLDivElement | null) => void, number] {
   const [w, setW] = useState(fallback);
   const ref = useCallback((el: HTMLDivElement | null) => {
     if (!el) return;
@@ -322,7 +322,7 @@ function ValueLine({ points }: { points: ValuePoint[] }) {
   );
 }
 
-function niceStep(raw: number): number {
+export function niceStep(raw: number): number {
   const p = 10 ** Math.floor(Math.log10(raw));
   const n = raw / p;
   return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;

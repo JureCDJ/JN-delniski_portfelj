@@ -124,3 +124,9 @@ export function validateTradeInput(
     },
   };
 }
+
+/** Simbol vira cen (Yahoo), npr. NVDA, SIE.DE, 1211.HK, KRK.WA, BRK-B. Vrne očiščen simbol ali null. */
+export function normalizePriceSymbol(raw: string): string | null {
+  const s = raw.trim().toUpperCase();
+  return /^[A-Z0-9^][A-Z0-9.\-=^]{0,19}$/.test(s) ? s : null;
+}

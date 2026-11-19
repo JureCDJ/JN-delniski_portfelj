@@ -7,10 +7,12 @@ import {
   refreshPrices,
   saveManualPrice,
   saveManualTrade,
+  savePriceSource,
   saveTarget,
   type PortfolioData,
 } from './data/repo';
 import {
+  demoBrokers,
   demoDividends,
   demoFxRows,
   demoInstruments,
@@ -27,10 +29,12 @@ import { Charts } from './ui/Charts';
 import { Login } from './ui/Login';
 import { Overview } from './ui/Overview';
 import { PriceForm } from './ui/PriceForm';
+import { PriceSourceForm } from './ui/PriceSourceForm';
+import { StockCard } from './ui/StockCard';
 import { TargetForm } from './ui/TargetForm';
 import { TradeForm } from './ui/TradeForm';
 
-export const APP_VERSION = 'v0.5';
+export const APP_VERSION = 'v0.6';
 
 /** Današnji koledarski datum v lokalnem času (ne prek toISOString). */
 function localToday(): IsoDate {
@@ -108,24 +112,12 @@ function Demo({ onExit }: { onExit: () => void }) {
   const targetInst = demoInstruments.find((i) => i.isin === targeting);
   const targetQuote = demoQuotes.find((q) => q.isin === targeting);
   const today = localToday();
+  const [card, setCard] = useState<string | null>(null);
+  const closeCard = useCallback(() => setCard(null), []);
+  const [selling, setSelling] = useState<string | null>(null);
+  const closeSale = useCallback(() => setSelling(null), []);
   return (
     <div className={shell}>
-      {targetInst ? (
-        <TargetForm
-          label={`${targetInst.symbol} ${targetInst.name}`}
-          current={targets.get(targetInst.isin) ?? null}
-          priceEur={targetQuote ? new Decimal(targetQuote.price).div(targetQuote.ratePerEur) : null}
-          onClose={closeTarget}
-          onSave={async (price) => {
-            setTargets((m) => {
-              const n = new Map(m);
-              if (price) n.set(targetInst.isin, new Decimal(price));
-              else n.delete(targetInst.isin);
-              return n;
-            });
-          }}
-        />
-      ) : null}
       <Header>
         <button type="button" onClick={() => setAdding(true)} className={btnPrimary}>
           <span aria-hidden="true">＋ </span>Dodaj<span className="hidden sm:inline"> posel</span>
@@ -151,16 +143,53 @@ function Demo({ onExit }: { onExit: () => void }) {
           tax={demoTax}
           usdRates={demoUsdRates}
           onEditTarget={setTargeting}
+          onOpen={setCard}
         />
       )}
-      {adding ? (
+      {card ? (
+        <StockCard
+          isin={card}
+          instruments={demoInstruments}
+          trades={trades}
+          quotes={demoQuotes}
+          dividends={demoDividends}
+          targets={targets}
+          tax={demoTax}
+          priceHistory={demoPriceHistory}
+          fxRows={demoFxRows}
+          brokerByAccount={demoBrokers}
+          today={today}
+          onClose={closeCard}
+          onSell={setSelling}
+          onEditTarget={setTargeting}
+        />
+      ) : null}
+      {targetInst ? (
+        <TargetForm
+          label={`${targetInst.symbol} ${targetInst.name}`}
+          current={targets.get(targetInst.isin) ?? null}
+          priceEur={targetQuote ? new Decimal(targetQuote.price).div(targetQuote.ratePerEur) : null}
+          onClose={closeTarget}
+          onSave={async (price) => {
+            setTargets((m) => {
+              const n = new Map(m);
+              if (price) n.set(targetInst.isin, new Decimal(price));
+              else n.delete(targetInst.isin);
+              return n;
+            });
+          }}
+        />
+      ) : null}
+      {adding || selling ? (
         <TradeForm
           today={today}
           instruments={demoInstruments}
           existingTrades={trades}
-          onClose={closeForm}
+          initial={selling ? { type: 'PRODAJA', isin: selling } : undefined}
+          taxSettings={demoTax.settings}
+          onClose={selling ? closeSale : closeForm}
           onSave={async (d) => {
-            setTrades((t) => [...t, { ...d, id: `demo-${t.length + 1}`, accountId: 'demo' }]);
+            setTrades((t) => [...t, { ...d, id: `demo-${t.length + 1}`, accountId: 'rocno' }]);
           }}
         />
       ) : null}
@@ -229,6 +258,13 @@ function Portfolio({ session }: { session: Session }) {
   const closeTarget = useCallback(() => setTargeting(null), []);
   const targetInst = targeting && data ? data.instruments.find((i) => i.isin === targeting) : undefined;
   const [tab, setTab] = useState<Tab>(readTab);
+  const [card, setCard] = useState<string | null>(null);
+  const closeCard = useCallback(() => setCard(null), []);
+  const [selling, setSelling] = useState<string | null>(null);
+  const closeSale = useCallback(() => setSelling(null), []);
+  const [sourcing, setSourcing] = useState<string | null>(null);
+  const closeSource = useCallback(() => setSourcing(null), []);
+  const sourceInst = sourcing && data ? data.instruments.find((i) => i.isin === sourcing) : undefined;
 
   return (
     <div className={shell}>
@@ -280,6 +316,7 @@ function Portfolio({ session }: { session: Session }) {
           onAddTrade={() => setAdding(true)}
           onManualPrice={setPricing}
           onEditTarget={setTargeting}
+          onOpen={setCard}
           onConfirmTax={
             data.tax
               ? () => {
@@ -293,6 +330,48 @@ function Portfolio({ session }: { session: Session }) {
         )}
         </>
       )}
+
+      {card && data ? (
+        <StockCard
+          isin={card}
+          instruments={data.instruments}
+          trades={data.trades}
+          quotes={data.quotes}
+          dividends={data.dividends}
+          targets={data.targets}
+          tax={data.tax}
+          priceHistory={data.priceHistory}
+          fxRows={data.fxRows}
+          brokerByAccount={data.brokerByAccount}
+          today={today}
+          onClose={closeCard}
+          onSell={setSelling}
+          onEditTarget={setTargeting}
+          onEditPriceSource={setSourcing}
+          onManualPrice={setPricing}
+        />
+      ) : null}
+
+      {sourceInst ? (
+        <PriceSourceForm
+          label={`${sourceInst.symbol} ${sourceInst.name}`}
+          current={
+            sourceInst.priceSource === 'YAHOO' && sourceInst.priceSymbol
+              ? { kind: 'YAHOO', symbol: sourceInst.priceSymbol, currency: sourceInst.priceCurrency ?? 'EUR' }
+              : { kind: 'ROCNO' }
+          }
+          onClose={closeSource}
+          onSave={async (src) => {
+            await savePriceSource(sourceInst.id, src);
+            if (src.kind === 'ROCNO') return reload();
+            // Takoj preveri simbol: osveži cene in poglej, ali je Yahoo za ta papir vrnil ceno.
+            const r = await refreshPrices();
+            await reload();
+            const bad = r.napake.find((n) => n.symbol === sourceInst.symbol || n.symbol === src.symbol);
+            if (bad) throw new Error(`Vir je shranjen, a Yahoo za ${src.symbol} ni vrnil cene (${bad.reason}). Preveri simbol in valuto.`);
+          }}
+        />
+      ) : null}
 
       {targetInst && data ? (
         <TargetForm
@@ -322,12 +401,14 @@ function Portfolio({ session }: { session: Session }) {
         />
       ) : null}
 
-      {adding && data ? (
+      {(adding || selling) && data ? (
         <TradeForm
           today={today}
           instruments={data.instruments}
           existingTrades={data.trades}
-          onClose={closeForm}
+          initial={selling ? { type: 'PRODAJA', isin: selling } : undefined}
+          taxSettings={data.tax?.settings ?? null}
+          onClose={selling ? closeSale : closeForm}
           onSave={async (draft) => {
             await saveManualTrade(draft);
             await reload();

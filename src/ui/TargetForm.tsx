@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { isTopDialog } from './modal';
 import { formatMoney } from '../domain/format';
 import { parseDecimalInput } from '../domain/validation';
 
@@ -19,11 +20,12 @@ export function TargetForm({ label, current, priceEur, onSave, onClose }: Props)
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     input.current?.focus();
     input.current?.select();
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && isTopDialog(dialog.current) && onClose();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -54,6 +56,7 @@ export function TargetForm({ label, current, priceEur, onSave, onClose }: Props)
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-6" onClick={onClose}>
       <div
+        ref={dialog}
         role="dialog"
         aria-modal="true"
         aria-labelledby="target-title"

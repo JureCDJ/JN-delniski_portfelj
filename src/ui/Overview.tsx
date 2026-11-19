@@ -75,8 +75,9 @@ function PositionRow(props: {
   showTax: boolean;
   onManualPrice?: (isin: string) => void;
   onEditTarget?: (isin: string) => void;
+  onOpen?: (isin: string) => void;
 }) {
-  const { p, inst, quote, latest, total, today, cur, fx, showTax, onManualPrice, onEditTarget } = props;
+  const { p, inst, quote, latest, total, today, cur, fx, showTax, onManualPrice, onEditTarget, onOpen } = props;
   const m = (v: Decimal) => (cur === 'USD' && fx ? v.mul(fx.rate) : v);
   const value = cur === 'USD' && fx ? fx.valueUsd : p.valueEur;
   const invested = cur === 'USD' && fx ? fx.investedUsd : p.costEur;
@@ -94,8 +95,23 @@ function PositionRow(props: {
     <li className={`grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 px-4 py-3.5 sm:grid-cols-[minmax(0,2fr)_1.1fr_1.1fr_1.1fr_0.9fr] sm:items-center sm:px-5 ${t?.reached ? 'bg-gain-bg/40' : ''}`}>
       <div className="min-w-0">
         <div className="flex items-baseline gap-2">
-          <span className="font-semibold">{inst?.symbol ?? p.isin}</span>
-          <span className="truncate text-sm text-ink-3">{inst?.name}</span>
+          {onOpen ? (
+            <button
+              type="button"
+              onClick={() => onOpen(p.isin)}
+              className="flex min-w-0 items-baseline gap-2 text-left hover:underline"
+              aria-label={`Odpri kartico ${inst?.symbol ?? p.isin} ${inst?.name ?? ''}`}
+            >
+              <span className="font-semibold">{inst?.symbol ?? p.isin}</span>
+              <span className="truncate text-sm text-ink-3">{inst?.name}</span>
+              <span aria-hidden="true" className="text-ink-3">›</span>
+            </button>
+          ) : (
+            <>
+              <span className="font-semibold">{inst?.symbol ?? p.isin}</span>
+              <span className="truncate text-sm text-ink-3">{inst?.name}</span>
+            </>
+          )}
           {t?.reached ? <span className="shrink-0 rounded-md bg-gain-bg px-1.5 text-xs font-medium text-gain">cilj dosežen</span> : null}
         </div>
         <div className="num mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-3">
@@ -175,11 +191,13 @@ export interface OverviewProps {
   onManualPrice?: (isin: string) => void;
   onEditTarget?: (isin: string) => void;
   onConfirmTax?: () => void;
+  /** Odpre kartico delnice. */
+  onOpen?: (isin: string) => void;
 }
 
 export function Overview(props: OverviewProps) {
   const { trades, instruments, quotes, today, dividends = [], targets, tax = null, usdRates = [], pricesDate, missingFx = [] } = props;
-  const { pricesToolbar, onAddTrade, onManualPrice, onEditTarget, onConfirmTax } = props;
+  const { pricesToolbar, onAddTrade, onManualPrice, onEditTarget, onConfirmTax, onOpen } = props;
   const [cur, setCur] = useState<DisplayCurrency>(readCurrency);
   const settings = tax?.settings ?? NO_TAX;
   const showTax = Boolean(tax);
@@ -370,6 +388,7 @@ export function Overview(props: OverviewProps) {
                   showTax={showTax}
                   onManualPrice={onManualPrice}
                   onEditTarget={onEditTarget}
+                  onOpen={onOpen}
                 />
               );
             })}

@@ -93,3 +93,9 @@ export const demoFxRows: FxRow[] = [
   { date: '2025-01-01', currency: 'USD', ratePerEur: '1.04' },
   { date: '2026-01-01', currency: 'USD', ratePerEur: '1.08' },
 ];
+
+export const demoBrokers = new Map([
+  ['ibkr', 'IBKR'],
+  ['n26', 'N26'],
+  ['rocno', 'ROCNO'],
+]);

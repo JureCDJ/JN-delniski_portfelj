@@ -62,3 +62,14 @@ describe('validacija posla', () => {
     if (!r.ok) expect(Object.keys(r.errors).sort()).toEqual(['date', 'isin', 'price', 'quantity', 'ratePerEur']);
   });
 });
+
+describe('simbol vira cen', () => {
+  it('sprejme borzne pripone, zavrne presledke in prazno', async () => {
+    const { normalizePriceSymbol } = await import('./validation');
+    expect(normalizePriceSymbol(' krk.wa ')).toBe('KRK.WA');
+    expect(normalizePriceSymbol('BRK-B')).toBe('BRK-B');
+    expect(normalizePriceSymbol('1211.HK')).toBe('1211.HK');
+    expect(normalizePriceSymbol('')).toBeNull();
+    expect(normalizePriceSymbol('NV DA')).toBeNull();
+  });
+});

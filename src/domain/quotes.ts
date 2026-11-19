@@ -33,7 +33,7 @@ export interface QuotesResult {
   latestDate: IsoDate | null;
 }
 
-function rateOn(fx: FxRow[], currency: string, date: IsoDate): string | null {
+export function rateOn(fx: FxRow[], currency: string, date: IsoDate): string | null {
   if (currency === 'EUR') return '1';
   let best: FxRow | null = null;
   for (const r of fx) {

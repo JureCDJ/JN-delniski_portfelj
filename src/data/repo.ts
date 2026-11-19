@@ -13,6 +13,8 @@ export interface InstrumentRow extends Instrument {
   id: string;
   priceSource: 'YAHOO' | 'ROCNO';
   priceSymbol: string | null;
+  /** Valuta cene pri viru (npr. USD za Yahoo NVDA); null = EUR. */
+  priceCurrency: string | null;
 }
 
 export interface TaxSettingsRow {
@@ -37,6 +39,8 @@ export interface PortfolioData {
   /** Vse shranjene cene (zgodovina za graf vrednosti skozi čas). */
   priceHistory: PriceRow[];
   fxRows: FxRow[];
+  /** Posrednik po id računa (za oznako lota: N26, IBKR …). */
+  brokerByAccount: Map<string, string>;
 }
 
 interface PriceDbRow {
@@ -69,7 +73,7 @@ function fail(what: string, error: { message: string } | null): never {
 
 export async function loadPortfolio(): Promise<PortfolioData> {
   const [inst, tx, px, fx] = await Promise.all([
-    supabase.from('instruments').select('id, isin, symbol, name, currency, type, price_source, price_symbol'),
+    supabase.from('instruments').select('id, isin, symbol, name, currency, type, price_source, price_symbol, price_currency'),
     supabase
       .from('transactions')
       .select(
@@ -88,17 +92,19 @@ export async function loadPortfolio(): Promise<PortfolioData> {
   if (px.error) fail('Branje cen', px.error);
   if (fx.error) fail('Branje tečajev', fx.error);
 
-  const [dv, tg, ts] = await Promise.all([
+  const [dv, tg, ts, ac] = await Promise.all([
     supabase
       .from('transactions')
       .select('type, trade_date, amount:amount::text, instrument:instruments(isin)')
       .in('type', ['DIVIDENDA', 'DAVEK_TUJINA']),
     supabase.from('targets').select('price_eur:price_eur::text, instrument:instruments(isin)'),
     supabase.from('tax_settings').select('id, valid_from, settings, source_note, confirmed_at').order('valid_from', { ascending: false }).limit(1),
+    supabase.from('accounts').select('id, broker'),
   ]);
   if (dv.error) fail('Branje dividend', dv.error);
   if (tg.error) fail('Branje ciljev', tg.error);
   if (ts.error) fail('Branje davčnih nastavitev', ts.error);
+  if (ac.error) fail('Branje računov', ac.error);
 
   const isinOfRow = (r: { instrument: unknown }) => (r.instrument as { isin: string } | null)?.isin ?? '';
   const dividends: Dividend[] = dv.data.map((r) => {
@@ -131,6 +137,7 @@ export async function loadPortfolio(): Promise<PortfolioData> {
     type: r.type,
     priceSource: r.price_source === 'ROCNO' ? 'ROCNO' : 'YAHOO',
     priceSymbol: r.price_symbol ?? null,
+    priceCurrency: r.price_currency ?? null,
   }));
   const isinById = new Map(instruments.map((i) => [i.id, i.isin]));
 
@@ -168,7 +175,21 @@ export async function loadPortfolio(): Promise<PortfolioData> {
     usdRates,
     priceHistory,
     fxRows,
+    brokerByAccount: new Map(ac.data.map((a) => [a.id, String(a.broker)])),
   };
+}
+
+/** Vir cene instrumenta: Yahoo (simbol + valuta) ali ročni vnos. */
+export async function savePriceSource(
+  instrumentId: string,
+  source: { kind: 'YAHOO'; symbol: string; currency: string } | { kind: 'ROCNO' },
+): Promise<void> {
+  const patch =
+    source.kind === 'YAHOO'
+      ? { price_source: 'YAHOO', price_symbol: source.symbol, price_currency: source.currency }
+      : { price_source: 'ROCNO', price_currency: 'EUR' };
+  const { error } = await supabase.from('instruments').update(patch).eq('id', instrumentId);
+  if (error) fail('Shranjevanje vira cene', error);
 }
 
 /** Ciljna prodajna cena v EUR; null odstrani cilj. */
