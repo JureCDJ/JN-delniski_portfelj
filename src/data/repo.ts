@@ -288,3 +288,10 @@ export async function savePayer(instrumentId: string, p: Payer): Promise<void> {
     .eq('id', instrumentId);
   if (error) fail('Shranjevanje izplačevalca', error);
 }
+
+/** Varnostna kopija vseh podatkov (funkcija v bazi; RLS — samo lastnikove vrstice, števila kot besedilo). */
+export async function fetchBackup(): Promise<unknown> {
+  const { data, error } = await supabase.rpc('varnostna_kopija');
+  if (error) fail('Varnostna kopija', error);
+  return data;
+}

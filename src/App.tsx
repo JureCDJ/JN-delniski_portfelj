@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Decimal from 'decimal.js';
 import {
   confirmTaxSettings,
+  fetchBackup,
   loadPortfolio,
   refreshPrices,
   saveManualPrice,
@@ -32,13 +33,14 @@ import { Overview } from './ui/Overview';
 import { PriceForm } from './ui/PriceForm';
 import { PayerForm } from './ui/PayerForm';
 import { PriceSourceForm } from './ui/PriceSourceForm';
+import { Reports } from './ui/Reports';
 import { Taxes } from './ui/Taxes';
 import type { Payer } from './domain/edavkiXml';
 import { StockCard } from './ui/StockCard';
 import { TargetForm } from './ui/TargetForm';
 import { TradeForm } from './ui/TradeForm';
 
-export const APP_VERSION = 'v0.7';
+export const APP_VERSION = 'v0.8';
 
 /** Današnji koledarski datum v lokalnem času (ne prek toISOString). */
 function localToday(): IsoDate {
@@ -59,12 +61,12 @@ function Header({ children }: { children?: React.ReactNode }) {
   );
 }
 
-type Tab = 'pregled' | 'grafi' | 'davki';
+type Tab = 'pregled' | 'grafi' | 'davki' | 'izpisi';
 
 function readTab(): Tab {
   try {
     const t = localStorage.getItem('portfelj.zavihek');
-    return t === 'grafi' || t === 'davki' ? t : 'pregled';
+    return t === 'grafi' || t === 'davki' || t === 'izpisi' ? t : 'pregled';
   } catch {
     return 'pregled';
   }
@@ -86,6 +88,7 @@ function Tabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
           ['pregled', 'Pregled'],
           ['grafi', 'Grafi'],
           ['davki', 'Davki'],
+          ['izpisi', 'Izpisi'],
         ] as const
       ).map(([k, label]) => (
         <button
@@ -140,7 +143,18 @@ function Demo({ onExit }: { onExit: () => void }) {
         <strong>Demo podatki.</strong> Izmišljeni posli in tečaji samo za prikaz vmesnika. Kar dodaš tukaj, se ne shrani.
       </div>
       <Tabs value={tab} onChange={setTab} />
-      {tab === 'davki' ? (
+      {tab === 'izpisi' ? (
+        <Reports
+          trades={trades}
+          instruments={demoInstruments}
+          quotes={demoQuotes}
+          dividends={demoDividends}
+          targets={targets}
+          tax={demoTax}
+          today={today}
+          onOpenTaxes={() => setTab('davki')}
+        />
+      ) : tab === 'davki' ? (
         <Taxes
           trades={trades}
           instruments={demoInstruments.map((i) => ({ ...i, payer: payers.get(i.isin) }))}
@@ -332,7 +346,19 @@ function Portfolio({ session }: { session: Session }) {
       ) : (
         <>
         <Tabs value={tab} onChange={setTab} />
-        {tab === 'davki' ? (
+        {tab === 'izpisi' ? (
+          <Reports
+            trades={data.trades}
+            instruments={data.instruments}
+            quotes={data.quotes}
+            dividends={data.dividends}
+            targets={data.targets}
+            tax={data.tax}
+            today={today}
+            onBackup={fetchBackup}
+            onOpenTaxes={() => setTab('davki')}
+          />
+        ) : tab === 'davki' ? (
           <Taxes
             trades={data.trades}
             instruments={data.instruments}

@@ -86,3 +86,42 @@ body {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
+
+/* Izpisi (rezina 8): tisk v PDF prek brskalnika. Na zaslonu je izpis skrit, ob tisku samo izpis. */
+.print-root {
+  display: none;
+}
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  body > *:not(.print-root) {
+    display: none !important;
+  }
+  .print-root {
+    display: block;
+    color: #000;
+    font-size: 9pt;
+  }
+  .print-root table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .print-root th,
+  .print-root td {
+    border-bottom: 0.5pt solid #bbb;
+    padding: 3pt 4pt;
+    vertical-align: top;
+  }
+  .print-root thead {
+    display: table-header-group;
+  }
+  .print-root tr {
+    break-inside: avoid;
+  }
+}
