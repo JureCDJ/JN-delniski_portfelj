@@ -7,6 +7,7 @@ import {
   refreshPrices,
   saveManualPrice,
   saveManualTrade,
+  savePayer,
   savePriceSource,
   saveTarget,
   type PortfolioData,
@@ -29,12 +30,15 @@ import { Charts } from './ui/Charts';
 import { Login } from './ui/Login';
 import { Overview } from './ui/Overview';
 import { PriceForm } from './ui/PriceForm';
+import { PayerForm } from './ui/PayerForm';
 import { PriceSourceForm } from './ui/PriceSourceForm';
+import { Taxes } from './ui/Taxes';
+import type { Payer } from './domain/edavkiXml';
 import { StockCard } from './ui/StockCard';
 import { TargetForm } from './ui/TargetForm';
 import { TradeForm } from './ui/TradeForm';
 
-export const APP_VERSION = 'v0.6';
+export const APP_VERSION = 'v0.7';
 
 /** Današnji koledarski datum v lokalnem času (ne prek toISOString). */
 function localToday(): IsoDate {
@@ -55,11 +59,12 @@ function Header({ children }: { children?: React.ReactNode }) {
   );
 }
 
-type Tab = 'pregled' | 'grafi';
+type Tab = 'pregled' | 'grafi' | 'davki';
 
 function readTab(): Tab {
   try {
-    return localStorage.getItem('portfelj.zavihek') === 'grafi' ? 'grafi' : 'pregled';
+    const t = localStorage.getItem('portfelj.zavihek');
+    return t === 'grafi' || t === 'davki' ? t : 'pregled';
   } catch {
     return 'pregled';
   }
@@ -80,6 +85,7 @@ function Tabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
         [
           ['pregled', 'Pregled'],
           ['grafi', 'Grafi'],
+          ['davki', 'Davki'],
         ] as const
       ).map(([k, label]) => (
         <button
@@ -116,6 +122,10 @@ function Demo({ onExit }: { onExit: () => void }) {
   const closeCard = useCallback(() => setCard(null), []);
   const [selling, setSelling] = useState<string | null>(null);
   const closeSale = useCallback(() => setSelling(null), []);
+  const [payers, setPayers] = useState(new Map<string, Payer>());
+  const [editingPayer, setEditingPayer] = useState<string | null>(null);
+  const closePayer = useCallback(() => setEditingPayer(null), []);
+  const payerInst = demoInstruments.find((i) => i.isin === editingPayer);
   return (
     <div className={shell}>
       <Header>
@@ -130,7 +140,16 @@ function Demo({ onExit }: { onExit: () => void }) {
         <strong>Demo podatki.</strong> Izmišljeni posli in tečaji samo za prikaz vmesnika. Kar dodaš tukaj, se ne shrani.
       </div>
       <Tabs value={tab} onChange={setTab} />
-      {tab === 'grafi' ? (
+      {tab === 'davki' ? (
+        <Taxes
+          trades={trades}
+          instruments={demoInstruments.map((i) => ({ ...i, payer: payers.get(i.isin) }))}
+          dividends={demoDividends}
+          tax={demoTax}
+          today={today}
+          onEditPayer={setEditingPayer}
+        />
+      ) : tab === 'grafi' ? (
         <Charts trades={trades} instruments={demoInstruments} quotes={demoQuotes} priceHistory={demoPriceHistory} fxRows={demoFxRows} today={today} />
       ) : (
         <Overview
@@ -146,6 +165,17 @@ function Demo({ onExit }: { onExit: () => void }) {
           onOpen={setCard}
         />
       )}
+      {payerInst ? (
+        <PayerForm
+          label={`${payerInst.symbol} ${payerInst.name}`}
+          suggested={{ name: payerInst.name, country: payerInst.isin.slice(0, 2) }}
+          current={payers.get(payerInst.isin) ?? { name: null, address: null, country: null, id: null }}
+          onClose={closePayer}
+          onSave={async (p) => {
+            setPayers((m) => new Map(m).set(payerInst.isin, p));
+          }}
+        />
+      ) : null}
       {card ? (
         <StockCard
           isin={card}
@@ -265,6 +295,17 @@ function Portfolio({ session }: { session: Session }) {
   const [sourcing, setSourcing] = useState<string | null>(null);
   const closeSource = useCallback(() => setSourcing(null), []);
   const sourceInst = sourcing && data ? data.instruments.find((i) => i.isin === sourcing) : undefined;
+  const [editingPayer, setEditingPayer] = useState<string | null>(null);
+  const closePayer = useCallback(() => setEditingPayer(null), []);
+  const payerInst = editingPayer && data ? data.instruments.find((i) => i.isin === editingPayer) : undefined;
+  const confirmTax =
+    data?.tax
+      ? () => {
+          if (window.confirm('Potrjuješ, da si davčne stopnje preveril in veljajo za tvoj izračun?')) {
+            void confirmTaxSettings(data.tax!.id).then(reload, (e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)));
+          }
+        }
+      : undefined;
 
   return (
     <div className={shell}>
@@ -291,7 +332,17 @@ function Portfolio({ session }: { session: Session }) {
       ) : (
         <>
         <Tabs value={tab} onChange={setTab} />
-        {tab === 'grafi' ? (
+        {tab === 'davki' ? (
+          <Taxes
+            trades={data.trades}
+            instruments={data.instruments}
+            dividends={data.dividends}
+            tax={data.tax}
+            today={today}
+            onEditPayer={setEditingPayer}
+            onConfirmTax={confirmTax}
+          />
+        ) : tab === 'grafi' ? (
           <Charts
             trades={data.trades}
             instruments={data.instruments}
@@ -317,15 +368,7 @@ function Portfolio({ session }: { session: Session }) {
           onManualPrice={setPricing}
           onEditTarget={setTargeting}
           onOpen={setCard}
-          onConfirmTax={
-            data.tax
-              ? () => {
-                  if (window.confirm('Potrjuješ, da si davčne stopnje preveril in veljajo za tvoj izračun?')) {
-                    void confirmTaxSettings(data.tax!.id).then(reload, (e: unknown) => setLoadError(e instanceof Error ? e.message : String(e)));
-                  }
-                }
-              : undefined
-          }
+          onConfirmTax={confirmTax}
         />
         )}
         </>
@@ -349,6 +392,19 @@ function Portfolio({ session }: { session: Session }) {
           onEditTarget={setTargeting}
           onEditPriceSource={setSourcing}
           onManualPrice={setPricing}
+        />
+      ) : null}
+
+      {payerInst ? (
+        <PayerForm
+          label={`${payerInst.symbol} ${payerInst.name}`}
+          suggested={{ name: payerInst.name, country: payerInst.isin.slice(0, 2) }}
+          current={payerInst.payer}
+          onClose={closePayer}
+          onSave={async (p) => {
+            await savePayer(payerInst.id, p);
+            await reload();
+          }}
         />
       ) : null}
 

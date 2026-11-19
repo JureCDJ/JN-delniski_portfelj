@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { supabase } from '../lib/supabase';
+import type { Payer } from '../domain/edavkiXml';
 import type { Dividend, UsdRate } from '../domain/overview';
 import { validateTaxSettings, type TaxSettings } from '../domain/tax';
 import type { TradeDraft } from '../domain/validation';
@@ -15,6 +16,8 @@ export interface InstrumentRow extends Instrument {
   priceSymbol: string | null;
   /** Valuta cene pri viru (npr. USD za Yahoo NVDA); null = EUR. */
   priceCurrency: string | null;
+  /** Izplačevalec dividend za Doh-Div. */
+  payer: Payer;
 }
 
 export interface TaxSettingsRow {
@@ -73,7 +76,7 @@ function fail(what: string, error: { message: string } | null): never {
 
 export async function loadPortfolio(): Promise<PortfolioData> {
   const [inst, tx, px, fx] = await Promise.all([
-    supabase.from('instruments').select('id, isin, symbol, name, currency, type, price_source, price_symbol, price_currency'),
+    supabase.from('instruments').select('id, isin, symbol, name, currency, type, price_source, price_symbol, price_currency, payer_name, payer_address, payer_country, payer_id'),
     supabase
       .from('transactions')
       .select(
@@ -138,6 +141,7 @@ export async function loadPortfolio(): Promise<PortfolioData> {
     priceSource: r.price_source === 'ROCNO' ? 'ROCNO' : 'YAHOO',
     priceSymbol: r.price_symbol ?? null,
     priceCurrency: r.price_currency ?? null,
+    payer: { name: r.payer_name ?? null, address: r.payer_address ?? null, country: r.payer_country ?? null, id: r.payer_id ?? null },
   }));
   const isinById = new Map(instruments.map((i) => [i.id, i.isin]));
 
@@ -273,4 +277,14 @@ export async function saveManualTrade(d: TradeDraft): Promise<void> {
     source: 'ROCNO',
   });
   if (error) fail('Shranjevanje posla', error);
+}
+
+/** Podatki o izplačevalcu dividend (Doh-Div). Prazna polja se shranijo kot null. */
+export async function savePayer(instrumentId: string, p: Payer): Promise<void> {
+  const clean = (v: string | null) => (v && v.trim() ? v.trim() : null);
+  const { error } = await supabase
+    .from('instruments')
+    .update({ payer_name: clean(p.name), payer_address: clean(p.address), payer_country: clean(p.country)?.toUpperCase() ?? null, payer_id: clean(p.id) })
+    .eq('id', instrumentId);
+  if (error) fail('Shranjevanje izplačevalca', error);
 }
