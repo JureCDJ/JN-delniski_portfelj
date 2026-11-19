@@ -1,14 +1,15 @@
 import type { Session } from '@supabase/supabase-js';
 import { useCallback, useEffect, useState } from 'react';
-import { loadPortfolio, saveManualTrade, type PortfolioData } from './data/repo';
+import { loadPortfolio, refreshPrices, saveManualPrice, saveManualTrade, type PortfolioData } from './data/repo';
 import { demoInstruments, demoQuotes, demoTrades } from './demo/demoData';
 import type { IsoDate } from './domain/dates';
 import { supabase } from './lib/supabase';
 import { Login } from './ui/Login';
 import { Overview } from './ui/Overview';
+import { PriceForm } from './ui/PriceForm';
 import { TradeForm } from './ui/TradeForm';
 
-export const APP_VERSION = 'v0.2';
+export const APP_VERSION = 'v0.3';
 
 /** Današnji koledarski datum v lokalnem času (ne prek toISOString). */
 function localToday(): IsoDate {
@@ -88,6 +89,43 @@ function Portfolio({ session }: { session: Session }) {
   }, [reload]);
 
   const closeForm = useCallback(() => setAdding(false), []);
+  const [pricing, setPricing] = useState<string | null>(null);
+  const closePrice = useCallback(() => setPricing(null), []);
+  const [refresh, setRefresh] = useState<
+    { kind: 'idle' } | { kind: 'busy' } | { kind: 'done'; text: string; warn: boolean } | { kind: 'error'; text: string }
+  >({ kind: 'idle' });
+
+  async function onRefresh() {
+    setRefresh({ kind: 'busy' });
+    try {
+      const r = await refreshPrices();
+      await reload();
+      const parts = [`Posodobljenih ${r.posodobljeno} / ${r.posodobljeno + r.napake.length}`];
+      if (r.napake.length) parts.push(`brez cene: ${r.napake.map((n) => n.symbol).join(', ')}`);
+      setRefresh({ kind: 'done', text: parts.join(' · '), warn: r.napake.length > 0 });
+    } catch (e) {
+      setRefresh({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  const pricesToolbar = (
+    <>
+      {refresh.kind === 'done' || refresh.kind === 'error' ? (
+        <span role="status" className={`text-xs ${refresh.kind === 'error' || refresh.warn ? 'text-warn' : 'text-gain'}`}>
+          {refresh.text}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        onClick={() => void onRefresh()}
+        disabled={refresh.kind === 'busy'}
+        className="min-h-9 whitespace-nowrap rounded-lg border border-line px-3 text-xs font-medium text-ink-2 hover:bg-surface-2 disabled:opacity-60"
+      >
+        {refresh.kind === 'busy' ? 'Osvežujem …' : 'Osveži cene'}
+      </button>
+    </>
+  );
+  const pricingInst = pricing && data ? data.instruments.find((i) => i.isin === pricing) : undefined;
 
   return (
     <div className={shell}>
@@ -112,8 +150,30 @@ function Portfolio({ session }: { session: Session }) {
           Nalagam portfelj …
         </p>
       ) : (
-        <Overview trades={data.trades} instruments={data.instruments} quotes={data.quotes} today={today} onAddTrade={() => setAdding(true)} />
+        <Overview
+          trades={data.trades}
+          instruments={data.instruments}
+          quotes={data.quotes}
+          pricesDate={data.pricesDate}
+          missingFx={data.missingFx}
+          pricesToolbar={pricesToolbar}
+          today={today}
+          onAddTrade={() => setAdding(true)}
+          onManualPrice={setPricing}
+        />
       )}
+
+      {pricingInst ? (
+        <PriceForm
+          label={`${pricingInst.symbol} ${pricingInst.name}`}
+          today={today}
+          onClose={closePrice}
+          onSave={async (date, price) => {
+            await saveManualPrice(pricingInst.id, date, price);
+            await reload();
+          }}
+        />
+      ) : null}
 
       {adding && data ? (
         <TradeForm

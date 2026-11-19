@@ -3,6 +3,7 @@ import { useMemo, type ReactNode } from 'react';
 import { formatDateSl, fullYearsBetween, type IsoDate } from '../domain/dates';
 import { formatEur, formatPct, formatQty, formatSignedEur } from '../domain/format';
 import { buildPositions, summarize, type Position } from '../domain/portfolio';
+import { isStale } from '../domain/quotes';
 import type { Instrument, Quote, Trade } from '../domain/types';
 
 export function Delta({ value, pct, stacked }: { value: Decimal | null; pct?: Decimal | null; stacked?: boolean }) {
@@ -47,9 +48,30 @@ function holdingInfo(p: Position, today: IsoDate): string {
   return `od ${formatDateSl(first.buyDate)} · ${years} ${yearsLabel(years)}`;
 }
 
-function PositionRow({ p, inst, total, today }: { p: Position; inst: Instrument | undefined; total: Decimal; today: IsoDate }) {
+export type InstrumentView = Instrument & { priceSource?: 'YAHOO' | 'ROCNO' };
+type QuoteView = Quote & { source?: string };
+
+function PositionRow({
+  p,
+  inst,
+  quote,
+  latest,
+  total,
+  today,
+  onManualPrice,
+}: {
+  p: Position;
+  inst: InstrumentView | undefined;
+  quote: QuoteView | undefined;
+  latest: IsoDate | null;
+  total: Decimal;
+  today: IsoDate;
+  onManualPrice?: (isin: string) => void;
+}) {
   const weight = p.valueEur && total.gt(0) ? p.valueEur.div(total).mul(100) : null;
   const weightText = weight ? formatPct(weight).replace('+', '') : '—';
+  const stale = quote && latest ? isStale(quote.date, latest) : false;
+  const manual = inst?.priceSource === 'ROCNO';
   return (
     <li className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 px-4 py-3.5 sm:grid-cols-[minmax(0,2.2fr)_1fr_1fr_1.3fr_1.3fr] sm:items-center sm:px-5">
       <div className="min-w-0">
@@ -57,7 +79,17 @@ function PositionRow({ p, inst, total, today }: { p: Position; inst: Instrument 
           <span className="font-semibold">{inst?.symbol ?? p.isin}</span>
           <span className="truncate text-sm text-ink-3">{inst?.name}</span>
         </div>
-        <div className="mt-0.5 text-xs text-ink-3">{holdingInfo(p, today)}</div>
+        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-3">
+          <span>{holdingInfo(p, today)}</span>
+          {stale && quote ? (
+            <span className="rounded-md bg-warn-bg px-1.5 py-0.5 text-warn">cena z dne {formatDateSl(quote.date)}</span>
+          ) : null}
+          {manual && onManualPrice ? (
+            <button type="button" onClick={() => onManualPrice(p.isin)} className="text-accent underline">
+              {quote ? `ročna cena ${formatDateSl(quote.date)} · posodobi` : 'Vpiši ceno'}
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="num text-right font-semibold sm:order-4">
         {p.valueEur ? formatEur(p.valueEur) : <span className="text-sm font-normal text-ink-3">ni tečaja</span>}
@@ -76,13 +108,30 @@ function PositionRow({ p, inst, total, today }: { p: Position; inst: Instrument 
 
 export interface OverviewProps {
   trades: Trade[];
-  instruments: Instrument[];
-  quotes: Quote[];
+  instruments: InstrumentView[];
+  quotes: QuoteView[];
   today: IsoDate;
+  /** Datum najnovejše cene; privzeto iz quotes. */
+  pricesDate?: IsoDate | null;
+  /** Instrumenti s ceno, a brez tečaja ECB. */
+  missingFx?: string[];
+  /** Gumb za osvežitev cen in njegovo stanje (ga upravlja nadrejeni). */
+  pricesToolbar?: ReactNode;
   onAddTrade?: () => void;
+  onManualPrice?: (isin: string) => void;
 }
 
-export function Overview({ trades, instruments, quotes, today, onAddTrade }: OverviewProps) {
+export function Overview({
+  trades,
+  instruments,
+  quotes,
+  today,
+  pricesDate,
+  missingFx = [],
+  pricesToolbar,
+  onAddTrade,
+  onManualPrice,
+}: OverviewProps) {
   const { positions, summary, error } = useMemo(() => {
     try {
       const all = buildPositions(trades, quotes);
@@ -124,6 +173,9 @@ export function Overview({ trades, instruments, quotes, today, onAddTrade }: Ove
   }
 
   const instByIsin = new Map(instruments.map((i) => [i.isin, i]));
+  const quoteByIsin = new Map(quotes.map((q) => [q.isin, q]));
+  const latest = pricesDate ?? quotes.reduce<IsoDate | null>((m, q) => (!m || q.date > m ? q.date : m), null);
+  const nameOf = (isin: string) => instByIsin.get(isin)?.symbol ?? isin;
   const prevValue = summary.valueEur.minus(summary.dayChangeEur);
   const dayPct = prevValue.gt(0) ? summary.dayChangeEur.div(prevValue).mul(100) : null;
   const hasQuotes = quotes.length > 0;
@@ -160,14 +212,18 @@ export function Overview({ trades, instruments, quotes, today, onAddTrade }: Ove
 
       {hasQuotes && summary.missingQuotes.length > 0 ? (
         <div role="alert" className="mt-4 rounded-xl bg-warn-bg px-4 py-2.5 text-sm text-warn">
-          Ni tečaja za: {summary.missingQuotes.join(', ')} — te pozicije niso vštete v vrednost.
+          Brez cene: {summary.missingQuotes.map(nameOf).join(', ')} — te pozicije niso vštete v vrednost
+          {missingFx.length ? ` (manjka tečaj ECB za ${missingFx.map(nameOf).join(', ')})` : ''}.
         </div>
       ) : null}
 
       <section aria-labelledby="pozicije" className="mt-8">
-        <div className="mb-3 flex items-baseline justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 id="pozicije" className="text-base font-semibold">Pozicije</h2>
-          {hasQuotes ? <span className="text-xs text-ink-3">tečaji na dan {formatDateSl(quotes[0]!.date)}</span> : null}
+          <div className="flex items-center gap-3">
+            {latest ? <span className="text-xs text-ink-3">cene z dne {formatDateSl(latest)}</span> : null}
+            {pricesToolbar}
+          </div>
         </div>
         <div className="overflow-hidden rounded-2xl border border-line bg-surface">
           <div className="hidden grid-cols-[minmax(0,2.2fr)_1fr_1fr_1.3fr_1.3fr] gap-x-4 border-b border-line bg-surface-2 px-5 py-2.5 text-xs font-medium text-ink-3 sm:grid">
@@ -179,7 +235,16 @@ export function Overview({ trades, instruments, quotes, today, onAddTrade }: Ove
           </div>
           <ul className="divide-y divide-line">
             {positions.map((p) => (
-              <PositionRow key={p.isin} p={p} inst={instByIsin.get(p.isin)} total={summary.valueEur} today={today} />
+              <PositionRow
+                key={p.isin}
+                p={p}
+                inst={instByIsin.get(p.isin)}
+                quote={quoteByIsin.get(p.isin)}
+                latest={latest}
+                total={summary.valueEur}
+                today={today}
+                onManualPrice={onManualPrice}
+              />
             ))}
           </ul>
         </div>

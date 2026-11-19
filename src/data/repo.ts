@@ -1,18 +1,31 @@
 import { supabase } from '../lib/supabase';
 import type { TradeDraft } from '../domain/validation';
-import type { Instrument, Quote, Trade } from '../domain/types';
+import { buildQuotes, type QuoteInfo } from '../domain/quotes';
+import type { Instrument, Trade } from '../domain/types';
 
 // Dostop do baze. Številska polja (numeric) beremo kot besedilo (::text),
 // ker jih PostgREST sicer vrne kot JSON števila in izgubimo natančnost.
 
 export interface InstrumentRow extends Instrument {
   id: string;
+  priceSource: 'YAHOO' | 'ROCNO';
+  priceSymbol: string | null;
 }
 
 export interface PortfolioData {
   instruments: InstrumentRow[];
   trades: Trade[];
-  quotes: Quote[];
+  quotes: QuoteInfo[];
+  /** Datum najnovejše cene v portfelju. */
+  pricesDate: string | null;
+  missingFx: string[];
+}
+
+/** Datum pred n dnevi (lokalni koledar, brez časovnega pasu). */
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function fail(what: string, error: { message: string } | null): never {
@@ -20,8 +33,8 @@ function fail(what: string, error: { message: string } | null): never {
 }
 
 export async function loadPortfolio(): Promise<PortfolioData> {
-  const [inst, tx] = await Promise.all([
-    supabase.from('instruments').select('id, isin, symbol, name, currency, type'),
+  const [inst, tx, px, fx] = await Promise.all([
+    supabase.from('instruments').select('id, isin, symbol, name, currency, type, price_source, price_symbol'),
     supabase
       .from('transactions')
       .select(
@@ -30,9 +43,20 @@ export async function loadPortfolio(): Promise<PortfolioData> {
       .in('type', ['NAKUP', 'PRODAJA'])
       .order('trade_date')
       .order('created_at'),
+    // Zadnji dve ceni na instrument sta v zadnjih ~3 tednih tudi ob praznikih.
+    supabase
+      .from('prices')
+      .select('instrument_id, date, close:close::text, currency, source')
+      .gte('date', daysAgo(21)),
+    supabase
+      .from('fx_rates')
+      .select('date, currency, rate_per_eur:rate_per_eur::text')
+      .gte('date', daysAgo(35)),
   ]);
   if (inst.error) fail('Branje instrumentov', inst.error);
   if (tx.error) fail('Branje transakcij', tx.error);
+  if (px.error) fail('Branje cen', px.error);
+  if (fx.error) fail('Branje tečajev', fx.error);
 
   const instruments: InstrumentRow[] = inst.data.map((r) => ({
     id: r.id,
@@ -41,7 +65,10 @@ export async function loadPortfolio(): Promise<PortfolioData> {
     name: r.name,
     currency: r.currency,
     type: r.type,
+    priceSource: r.price_source === 'ROCNO' ? 'ROCNO' : 'YAHOO',
+    priceSymbol: r.price_symbol ?? null,
   }));
+  const isinById = new Map(instruments.map((i) => [i.id, i.isin]));
 
   const trades: Trade[] = tx.data.map((r) => {
     const instrument = r.instrument as unknown as { isin: string } | null;
@@ -59,8 +86,49 @@ export async function loadPortfolio(): Promise<PortfolioData> {
     };
   });
 
-  // Tečaji instrumentov pridejo s samodejno posodobitvijo (REQ-05).
-  return { instruments, trades, quotes: [] };
+  const { quotes, latestDate, missingFx } = buildQuotes(
+    px.data
+      .filter((r) => isinById.has(r.instrument_id))
+      .map((r) => ({
+        isin: isinById.get(r.instrument_id)!,
+        date: r.date,
+        close: r.close as unknown as string,
+        currency: r.currency,
+        source: r.source,
+      })),
+    fx.data.map((r) => ({ date: r.date, currency: r.currency, ratePerEur: r.rate_per_eur as unknown as string })),
+  );
+
+  return { instruments, trades, quotes, pricesDate: latestDate, missingFx };
+}
+
+export interface RefreshResult {
+  posodobljeno: number;
+  skupaj: number;
+  napake: { symbol: string; reason: string }[];
+  rocno: string[];
+}
+
+/** Sproži posodobitev cen in tečajev (Edge Function prices-sync, z uporabnikovo prijavo). */
+export async function refreshPrices(): Promise<RefreshResult> {
+  const { data, error } = await supabase.functions.invoke<RefreshResult & { napaka?: string }>('prices-sync', { body: {} });
+  if (error) {
+    const body = await (error as { context?: Response }).context?.json?.().catch(() => null);
+    throw new Error(`Posodobitev cen ni uspela: ${body?.napaka ?? error.message}`);
+  }
+  if (!data || data.napaka) throw new Error(`Posodobitev cen ni uspela: ${data?.napaka ?? 'ni odgovora'}`);
+  return data;
+}
+
+/** Ročna cena v EUR (npr. Krka) za izbrani dan. Prepiše ceno istega dne. */
+export async function saveManualPrice(instrumentId: string, date: string, priceEur: string): Promise<void> {
+  const { error } = await supabase
+    .from('prices')
+    .upsert(
+      { instrument_id: instrumentId, date, close: priceEur, currency: 'EUR', source: 'ROCNO', fetched_at: new Date().toISOString() },
+      { onConflict: 'instrument_id,date' },
+    );
+  if (error) fail('Shranjevanje cene', error);
 }
 
 async function ensureManualAccount(): Promise<string> {

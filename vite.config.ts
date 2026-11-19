@@ -8,6 +8,6 @@ export default defineConfig({
   base: '/JN-delniski_portfelj/',
   plugins: [react(), tailwindcss()],
   test: {
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'supabase/functions/_shared/**/*.test.ts'],
   },
 });
