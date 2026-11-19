@@ -17,6 +17,21 @@
   --color-accent: #1f4fd8;
   --color-warn-bg: #fff6e0;
   --color-warn: #7a5300;
+
+  /* Grafi: kategorična paleta v fiksnem vrstnem redu (dataviz, preverjena za barvno slepoto),
+     divergentni par za dobiček/izgubo, mreža in os. */
+  --color-s1: #2a78d6;
+  --color-s2: #eb6834;
+  --color-s3: #1baf7a;
+  --color-s4: #eda100;
+  --color-s5: #e87ba4;
+  --color-s6: #008300;
+  --color-s7: #6250d6;
+  --color-s-other: #b4b2a9;
+  --color-up: #2a78d6;
+  --color-down: #e34948;
+  --color-grid: #e1e0d9;
+  --color-axis: #c3c2b7;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -35,6 +50,18 @@
     --color-accent: #7aa2ff;
     --color-warn-bg: #2b2210;
     --color-warn: #f2c66d;
+    --color-s1: #3987e5;
+    --color-s2: #d95926;
+    --color-s3: #199e70;
+    --color-s4: #c98500;
+    --color-s5: #d55181;
+    --color-s6: #0ca30c;
+    --color-s7: #9085e9;
+    --color-s-other: #5f5e5a;
+    --color-up: #3987e5;
+    --color-down: #e66767;
+    --color-grid: #2c2c2a;
+    --color-axis: #383835;
   }
 }
 

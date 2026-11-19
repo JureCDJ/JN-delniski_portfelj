@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import type { Dividend, UsdRate } from '../domain/overview';
+import type { FxRow, PriceRow } from '../domain/quotes';
 import type { TaxSettings } from '../domain/tax';
 import type { Instrument, Quote, Trade } from '../domain/types';
 
@@ -62,4 +63,33 @@ export const demoUsdRates: UsdRate[] = [
   { date: '2024-06-05', rate: new Decimal('1.0870') },
   { date: '2025-02-11', rate: new Decimal('1.0350') },
   { date: '2026-11-18', rate: new Decimal('1.0800') },
+];
+
+// Demo zgodovina cen (tedensko, izmišljeno) za graf vrednosti skozi čas.
+function demoSeries(isin: string, currency: string, from: string, start: number, end: number): PriceRow[] {
+  const out: PriceRow[] = [];
+  const t0 = Date.parse(`${from}T12:00:00Z`);
+  const t1 = Date.parse('2026-11-13T12:00:00Z');
+  const weeks = Math.floor((t1 - t0) / (7 * 86_400_000));
+  for (let w = 0; w <= weeks; w++) {
+    const date = new Date(t0 + w * 7 * 86_400_000).toISOString().slice(0, 10);
+    const wave = Math.sin(w / 5) * 0.06 * start;
+    out.push({ isin, date, close: (start + ((end - start) * w) / weeks + wave).toFixed(2), currency, source: 'DEMO' });
+  }
+  return out;
+}
+
+export const demoPriceHistory: PriceRow[] = [
+  ...demoSeries('US0378331005', 'USD', '2019-05-17', 48, 226),
+  ...demoSeries('US5949181045', 'USD', '2021-03-05', 230, 415),
+  ...demoSeries('NL0010273215', 'EUR', '2023-10-20', 550, 695),
+  ...demoSeries('SI0031102120', 'EUR', '2024-06-07', 128, 171),
+];
+
+export const demoFxRows: FxRow[] = [
+  { date: '2019-01-01', currency: 'USD', ratePerEur: '1.12' },
+  { date: '2021-01-01', currency: 'USD', ratePerEur: '1.20' },
+  { date: '2023-01-01', currency: 'USD', ratePerEur: '1.07' },
+  { date: '2025-01-01', currency: 'USD', ratePerEur: '1.04' },
+  { date: '2026-01-01', currency: 'USD', ratePerEur: '1.08' },
 ];

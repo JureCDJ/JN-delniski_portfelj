@@ -11,8 +11,30 @@ export interface DailyClose {
 export interface YahooQuote {
   symbol: string;
   currency: string;
-  /** Zadnji dve trgovalni zaključni ceni, najstarejša prva. */
+  /** Vse trgovalne zaključne cene v odgovoru, najstarejša prva. */
   closes: DailyClose[];
+}
+
+function weekKey(date: string): string {
+  // Ponedeljek tedna, v katerem je datum (UTC koledar, brez časovnega pasu).
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const t = new Date(Date.UTC(y, m - 1, d));
+  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7));
+  return t.toISOString().slice(0, 10);
+}
+
+/**
+ * Zgodovina za graf: za dni pred `dailyFrom` obdrži samo zadnji trgovalni dan v tednu,
+ * od `dailyFrom` naprej vse dni. Vhod mora biti urejen od najstarejšega.
+ */
+export function thinToWeekly(closes: DailyClose[], dailyFrom: string): DailyClose[] {
+  const out: DailyClose[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    const c = closes[i]!;
+    const next = closes[i + 1];
+    if (c.date >= dailyFrom || !next || weekKey(next.date) !== weekKey(c.date)) out.push(c);
+  }
+  return out;
 }
 
 /**
@@ -32,8 +54,8 @@ function isoDateFromEpoch(seconds: number, gmtoffset: number): string {
 }
 
 /**
- * Yahoo Finance /v8/finance/chart (range=5d, interval=1d).
- * Pence (GBp/GBX) pretvori v GBP. Vrne zadnji dve dni z znano ceno.
+ * Yahoo Finance /v8/finance/chart (interval=1d).
+ * Pence (GBp/GBX) pretvori v GBP. Vrne vse dni z znano ceno, najstarejši prvi.
  */
 export function parseYahooChart(body: unknown): YahooQuote {
   const chart = (body as { chart?: { result?: unknown[] | null; error?: { description?: string } | null } })?.chart;
@@ -61,7 +83,7 @@ export function parseYahooChart(body: unknown): YahooQuote {
     const c = closes[i];
     if (typeof c === 'number' && c > 0) byDate.set(isoDateFromEpoch(t, meta.gmtoffset ?? 0), c / divisor);
   });
-  const days = [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).slice(-2);
+  const days = [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
   if (days.length === 0) throw new Error('Ni cen v zadnjih dneh');
   return {
     symbol: meta.symbol ?? '',

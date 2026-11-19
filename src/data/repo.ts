@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import type { Dividend, UsdRate } from '../domain/overview';
 import { validateTaxSettings, type TaxSettings } from '../domain/tax';
 import type { TradeDraft } from '../domain/validation';
-import { buildQuotes, type QuoteInfo } from '../domain/quotes';
+import { buildQuotes, type FxRow, type PriceRow, type QuoteInfo } from '../domain/quotes';
 import type { Instrument, Trade } from '../domain/types';
 
 // Dostop do baze. Številska polja (numeric) beremo kot besedilo (::text),
@@ -34,13 +34,33 @@ export interface PortfolioData {
   targets: Map<string, Decimal>;
   tax: TaxSettingsRow | null;
   usdRates: UsdRate[];
+  /** Vse shranjene cene (zgodovina za graf vrednosti skozi čas). */
+  priceHistory: PriceRow[];
+  fxRows: FxRow[];
 }
 
-/** Datum pred n dnevi (lokalni koledar, brez časovnega pasu). */
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+interface PriceDbRow {
+  instrument_id: string;
+  date: string;
+  close: string;
+  currency: string | null;
+  source: string;
+}
+
+async function loadAllPrices(): Promise<{ data: PriceDbRow[]; error: { message: string } | null }> {
+  const page = 1000;
+  const out: PriceDbRow[] = [];
+  for (let from = 0; ; from += page) {
+    const r = await supabase
+      .from('prices')
+      .select('instrument_id, date, close:close::text, currency, source')
+      .order('instrument_id')
+      .order('date')
+      .range(from, from + page - 1);
+    if (r.error) return { data: [], error: r.error };
+    out.push(...(r.data as unknown as PriceDbRow[]));
+    if (r.data.length < page) return { data: out, error: null };
+  }
 }
 
 function fail(what: string, error: { message: string } | null): never {
@@ -58,11 +78,8 @@ export async function loadPortfolio(): Promise<PortfolioData> {
       .in('type', ['NAKUP', 'PRODAJA'])
       .order('trade_date')
       .order('created_at'),
-    // Zadnji dve ceni na instrument sta v zadnjih ~3 tednih tudi ob praznikih.
-    supabase
-      .from('prices')
-      .select('instrument_id, date, close:close::text, currency, source')
-      .gte('date', daysAgo(21)),
+    // Vsa zgodovina cen (tedenska + zadnjih 30 dni dnevno) — po straneh, ker baza vrne največ 1000 vrstic.
+    loadAllPrices(),
     // Vsi tečaji (USD zgodovina za pogled v $ — nakupi po tečaju na dan nakupa).
     supabase.from('fx_rates').select('date, currency, rate_per_eur:rate_per_eur::text').order('date'),
   ]);
@@ -133,18 +150,11 @@ export async function loadPortfolio(): Promise<PortfolioData> {
     };
   });
 
-  const { quotes, latestDate, missingFx } = buildQuotes(
-    px.data
-      .filter((r) => isinById.has(r.instrument_id))
-      .map((r) => ({
-        isin: isinById.get(r.instrument_id)!,
-        date: r.date,
-        close: r.close as unknown as string,
-        currency: r.currency,
-        source: r.source,
-      })),
-    fx.data.map((r) => ({ date: r.date, currency: r.currency, ratePerEur: r.rate_per_eur as unknown as string })),
-  );
+  const priceHistory: PriceRow[] = px.data
+    .filter((r) => isinById.has(r.instrument_id))
+    .map((r) => ({ isin: isinById.get(r.instrument_id)!, date: r.date, close: r.close, currency: r.currency, source: r.source }));
+  const fxRows: FxRow[] = fx.data.map((r) => ({ date: r.date, currency: r.currency, ratePerEur: r.rate_per_eur as unknown as string }));
+  const { quotes, latestDate, missingFx } = buildQuotes(priceHistory, fxRows);
 
   return {
     instruments,
@@ -156,6 +166,8 @@ export async function loadPortfolio(): Promise<PortfolioData> {
     targets,
     tax,
     usdRates,
+    priceHistory,
+    fxRows,
   };
 }
 

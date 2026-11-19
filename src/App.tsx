@@ -10,16 +10,27 @@ import {
   saveTarget,
   type PortfolioData,
 } from './data/repo';
-import { demoDividends, demoInstruments, demoQuotes, demoTargets, demoTax, demoTrades, demoUsdRates } from './demo/demoData';
+import {
+  demoDividends,
+  demoFxRows,
+  demoInstruments,
+  demoPriceHistory,
+  demoQuotes,
+  demoTargets,
+  demoTax,
+  demoTrades,
+  demoUsdRates,
+} from './demo/demoData';
 import type { IsoDate } from './domain/dates';
 import { supabase } from './lib/supabase';
+import { Charts } from './ui/Charts';
 import { Login } from './ui/Login';
 import { Overview } from './ui/Overview';
 import { PriceForm } from './ui/PriceForm';
 import { TargetForm } from './ui/TargetForm';
 import { TradeForm } from './ui/TradeForm';
 
-export const APP_VERSION = 'v0.4';
+export const APP_VERSION = 'v0.5';
 
 /** Današnji koledarski datum v lokalnem času (ne prek toISOString). */
 function localToday(): IsoDate {
@@ -40,7 +51,48 @@ function Header({ children }: { children?: React.ReactNode }) {
   );
 }
 
-const shell = 'mx-auto max-w-5xl px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-12 sm:px-6';
+type Tab = 'pregled' | 'grafi';
+
+function readTab(): Tab {
+  try {
+    return localStorage.getItem('portfelj.zavihek') === 'grafi' ? 'grafi' : 'pregled';
+  } catch {
+    return 'pregled';
+  }
+}
+
+function Tabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
+  const pick = (t: Tab) => {
+    onChange(t);
+    try {
+      localStorage.setItem('portfelj.zavihek', t);
+    } catch {
+      /* zasebno okno */
+    }
+  };
+  return (
+    <nav aria-label="Pogledi" className="mt-4 flex gap-1 border-b border-line">
+      {(
+        [
+          ['pregled', 'Pregled'],
+          ['grafi', 'Grafi'],
+        ] as const
+      ).map(([k, label]) => (
+        <button
+          key={k}
+          type="button"
+          aria-current={value === k ? 'page' : undefined}
+          onClick={() => pick(k)}
+          className={`-mb-px min-h-11 border-b-2 px-3 text-sm font-semibold ${value === k ? 'border-ink text-ink' : 'border-transparent text-ink-3 hover:text-ink-2'}`}
+        >
+          {label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+const shell ='mx-auto max-w-5xl px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-12 sm:px-6';
 const btnSecondary = 'min-h-11 whitespace-nowrap rounded-xl px-3 text-sm text-ink-2 hover:bg-surface-2';
 const btnPrimary = 'min-h-11 whitespace-nowrap rounded-xl bg-ink px-4 text-sm font-semibold text-bg';
 
@@ -50,6 +102,7 @@ function Demo({ onExit }: { onExit: () => void }) {
   const [adding, setAdding] = useState(false);
   const closeForm = useCallback(() => setAdding(false), []);
   const [targets, setTargets] = useState(demoTargets);
+  const [tab, setTab] = useState<Tab>(readTab);
   const [targeting, setTargeting] = useState<string | null>(null);
   const closeTarget = useCallback(() => setTargeting(null), []);
   const targetInst = demoInstruments.find((i) => i.isin === targeting);
@@ -84,17 +137,22 @@ function Demo({ onExit }: { onExit: () => void }) {
       <div role="note" className="mt-2 rounded-xl bg-warn-bg px-4 py-2.5 text-sm text-warn">
         <strong>Demo podatki.</strong> Izmišljeni posli in tečaji samo za prikaz vmesnika. Kar dodaš tukaj, se ne shrani.
       </div>
-      <Overview
-        trades={trades}
-        instruments={demoInstruments}
-        quotes={demoQuotes}
-        today={today}
-        dividends={demoDividends}
-        targets={targets}
-        tax={demoTax}
-        usdRates={demoUsdRates}
-        onEditTarget={setTargeting}
-      />
+      <Tabs value={tab} onChange={setTab} />
+      {tab === 'grafi' ? (
+        <Charts trades={trades} instruments={demoInstruments} quotes={demoQuotes} priceHistory={demoPriceHistory} fxRows={demoFxRows} today={today} />
+      ) : (
+        <Overview
+          trades={trades}
+          instruments={demoInstruments}
+          quotes={demoQuotes}
+          today={today}
+          dividends={demoDividends}
+          targets={targets}
+          tax={demoTax}
+          usdRates={demoUsdRates}
+          onEditTarget={setTargeting}
+        />
+      )}
       {adding ? (
         <TradeForm
           today={today}
@@ -170,6 +228,7 @@ function Portfolio({ session }: { session: Session }) {
   const [targeting, setTargeting] = useState<string | null>(null);
   const closeTarget = useCallback(() => setTargeting(null), []);
   const targetInst = targeting && data ? data.instruments.find((i) => i.isin === targeting) : undefined;
+  const [tab, setTab] = useState<Tab>(readTab);
 
   return (
     <div className={shell}>
@@ -194,6 +253,18 @@ function Portfolio({ session }: { session: Session }) {
           Nalagam portfelj …
         </p>
       ) : (
+        <>
+        <Tabs value={tab} onChange={setTab} />
+        {tab === 'grafi' ? (
+          <Charts
+            trades={data.trades}
+            instruments={data.instruments}
+            quotes={data.quotes}
+            priceHistory={data.priceHistory}
+            fxRows={data.fxRows}
+            today={today}
+          />
+        ) : (
         <Overview
           trades={data.trades}
           instruments={data.instruments}
@@ -219,6 +290,8 @@ function Portfolio({ session }: { session: Session }) {
               : undefined
           }
         />
+        )}
+        </>
       )}
 
       {targetInst && data ? (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanNumber, parseFrankfurter, parseYahooChart } from './marketData';
+import { cleanNumber, parseFrankfurter, parseYahooChart, thinToWeekly } from './marketData';
 
 // Skrajšan resničen odgovor Yahoo za ENR.DE (19.11.2026).
 const ENR = {
@@ -19,7 +19,7 @@ describe('Yahoo', () => {
   it('zadnji dve ceni z datumom borze, brez artefaktov float', () => {
     const q = parseYahooChart(ENR);
     expect(q.currency).toBe('EUR');
-    expect(q.closes).toEqual([
+    expect(q.closes.slice(-2)).toEqual([
       { date: '2026-11-18', close: '126.66' },
       { date: '2026-11-19', close: '130.4' },
     ]);
@@ -34,7 +34,9 @@ describe('Yahoo', () => {
   it('pence → GBP', () => {
     const body = structuredClone(ENR);
     body.chart.result[0]!.meta.currency = 'GBp';
-    expect(parseYahooChart(body)).toMatchObject({ currency: 'GBP', closes: [{ close: '1.2666' }, { close: '1.304' }] });
+    const q = parseYahooChart(body);
+    expect(q.currency).toBe('GBP');
+    expect(q.closes.slice(-2).map((c) => c.close)).toEqual(['1.2666', '1.304']);
   });
 
   it('neznan simbol → jasna napaka', () => {
@@ -50,6 +52,25 @@ describe('Yahoo', () => {
       chart: { result: [{ meta: { currency: 'USD', gmtoffset: -18000 }, timestamp: [ts], indicators: { quote: [{ close: [150.96] }] } }] },
     });
     expect(q.closes).toEqual([{ date: '2026-11-18', close: '150.96' }]);
+  });
+});
+
+describe('zgodovina: tedenske cene', () => {
+  const days = ['2026-11-02', '2026-11-03', '2026-11-06', '2026-11-09', '2026-11-13', '2026-11-16', '2026-11-17', '2026-11-18'].map((date, i) => ({
+    date,
+    close: String(100 + i),
+  }));
+  it('pred mejo zadnji trgovalni dan v tednu, od meje vsi dnevi', () => {
+    expect(thinToWeekly(days, '2026-11-16').map((c) => c.date)).toEqual([
+      '2026-11-06',
+      '2026-11-13',
+      '2026-11-16',
+      '2026-11-17',
+      '2026-11-18',
+    ]);
+  });
+  it('zadnji dan je vedno ohranjen', () => {
+    expect(thinToWeekly(days, '2099-01-01').at(-1)!.date).toBe('2026-11-18');
   });
 });
 
