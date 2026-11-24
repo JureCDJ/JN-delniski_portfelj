@@ -31,6 +31,7 @@ import { Charts } from './ui/Charts';
 import { Login } from './ui/Login';
 import { Overview } from './ui/Overview';
 import { PriceForm } from './ui/PriceForm';
+import { PasswordForm } from './ui/PasswordForm';
 import { PayerForm } from './ui/PayerForm';
 import { PriceSourceForm } from './ui/PriceSourceForm';
 import { Reports } from './ui/Reports';
@@ -40,7 +41,7 @@ import { StockCard } from './ui/StockCard';
 import { TargetForm } from './ui/TargetForm';
 import { TradeForm } from './ui/TradeForm';
 
-export const APP_VERSION = 'v0.8.1';
+export const APP_VERSION = 'v0.8.2';
 
 /** Današnji koledarski datum v lokalnem času (ne prek toISOString). */
 function localToday(): IsoDate {
@@ -50,13 +51,13 @@ function localToday(): IsoDate {
 
 function Header({ children }: { children?: React.ReactNode }) {
   return (
-    <header className="flex items-center justify-between gap-3 py-3">
-      <div className="flex items-center gap-2.5">
+    <header className="flex items-center justify-between gap-2 py-3">
+      <div className="flex items-center gap-2">
         <img src={`${import.meta.env.BASE_URL}icon.svg`} alt="" className="h-8 w-8" />
         <h1 className="text-lg font-semibold">Portfelj</h1>
-        <span className="num text-xs text-ink-3">{APP_VERSION}</span>
+        <span className="num text-xs text-ink-3 max-[370px]:hidden">{APP_VERSION}</span>
       </div>
-      <div className="flex items-center gap-2">{children}</div>
+      <div className="flex items-center gap-1 sm:gap-2">{children}</div>
     </header>
   );
 }
@@ -106,7 +107,7 @@ function Tabs({ value, onChange }: { value: Tab; onChange: (t: Tab) => void }) {
 }
 
 const shell ='mx-auto max-w-5xl px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-12 sm:px-6';
-const btnSecondary = 'min-h-11 whitespace-nowrap rounded-xl px-3 text-sm text-ink-2 hover:bg-surface-2';
+const btnSecondary = 'min-h-11 whitespace-nowrap rounded-xl px-2 sm:px-3 text-sm text-ink-2 hover:bg-surface-2';
 const btnPrimary = 'min-h-11 whitespace-nowrap rounded-xl bg-ink px-4 text-sm font-semibold text-bg';
 
 function Demo({ onExit }: { onExit: () => void }) {
@@ -311,6 +312,8 @@ function Portfolio({ session }: { session: Session }) {
   const sourceInst = sourcing && data ? data.instruments.find((i) => i.isin === sourcing) : undefined;
   const [editingPayer, setEditingPayer] = useState<string | null>(null);
   const closePayer = useCallback(() => setEditingPayer(null), []);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const closePassword = useCallback(() => setPasswordOpen(false), []);
   const payerInst = editingPayer && data ? data.instruments.find((i) => i.isin === editingPayer) : undefined;
   const confirmTax =
     data?.tax
@@ -326,6 +329,9 @@ function Portfolio({ session }: { session: Session }) {
       <Header>
         <button type="button" onClick={() => setAdding(true)} disabled={!data} className={`${btnPrimary} disabled:opacity-50`}>
           <span aria-hidden="true">＋ </span>Dodaj<span className="hidden sm:inline"> posel</span>
+        </button>
+        <button type="button" onClick={() => setPasswordOpen(true)} className={btnSecondary}>
+          Geslo
         </button>
         <button type="button" onClick={() => void supabase.auth.signOut()} className={btnSecondary} title={session.user.email ?? ''}>
           Odjava
@@ -421,6 +427,7 @@ function Portfolio({ session }: { session: Session }) {
         />
       ) : null}
 
+      {passwordOpen ? <PasswordForm email={session.user.email ?? ''} onClose={closePassword} /> : null}
       {payerInst ? (
         <PayerForm
           label={`${payerInst.symbol} ${payerInst.name}`}

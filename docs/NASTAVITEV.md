@@ -94,21 +94,15 @@ Opravi, ko je aplikacija objavljena.
 
 ## Korak 8 — Aplikacija na telefonu
 
-**Enkrat — e-pošta s kodo za prijavo** (na iPhonu se povezava iz e-pošte odpre v Safariju, ne v
-aplikaciji na začetnem zaslonu, zato se tam prijaviš s kodo):
+Na iPhonu ima aplikacija na začetnem zaslonu ločen pomnilnik od Safarija — povezava iz e-pošte bi se
+odprla v Safariju. Zato se tam prijaviš z **geslom**. (Brezplačni Supabase novejšim projektom ne
+dovoli urejati e-poštnih predlog, zato prijava s kodo iz e-pošte ni mogoča.)
 
-- [ ] Supabase → projekt → **Authentication** → **Emails** (ali *Email Templates*) → **Magic Link**.
-- [ ] **Subject:** `Koda za prijavo v Portfelj`
-- [ ] **Body:** izbriši obstoječe besedilo in prilepi celotno vsebino datoteke
-  `supabase/templates/prijava.html` (Claude ti jo lahko izpiše) → **Save**.
-
-**iPhone (Safari):**
-
-- [ ] V **Safariju** odpri naslov aplikacije → **Deli** → **Dodaj na začetni zaslon** → **Dodaj**.
-- [ ] Odpri aplikacijo z začetnega zaslona → vpiši e-naslov → **Pošlji kodo za prijavo** → kodo iz
-  e-pošte vpiši v aplikacijo. Prijava ostane shranjena.
-
-**Android (Chrome):** meni **⋮** → **Dodaj na začetni zaslon** (ali **Namesti aplikacijo**).
+- [ ] **Enkrat — nastavi geslo:** na računalniku se prijavi (povezava po e-pošti) → zgoraj **Geslo**
+  → vpiši geslo dvakrat → **Shrani geslo**.
+- [ ] **iPhone (Safari):** odpri naslov aplikacije → **Deli** → **Dodaj na začetni zaslon** → **Dodaj**.
+  Odpri aplikacijo z začetnega zaslona → e-naslov + geslo → **Prijava**. Prijava ostane shranjena.
+- [ ] **Android (Chrome):** meni **⋮** → **Dodaj na začetni zaslon** (ali **Namesti aplikacijo**).
 
 ---
 

@@ -1,20 +1,60 @@
 import { useState, type FormEvent } from 'react';
 import { supabase } from '../lib/supabase';
 
-type State = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent'; email: string } | { kind: 'error'; message: string };
+// Prijava z e-naslovom in geslom (deluje tudi v aplikaciji na začetnem zaslonu iPhona, ki ima ločen
+// pomnilnik od Safarija — povezava iz e-pošte bi se odprla v Safariju). Povezava po e-pošti ostane
+// kot rezervna pot: z njo se prijaviš, ko gesla še nimaš ali si ga pozabil, in ga nato nastaviš.
+
+type State =
+  | { kind: 'idle' }
+  | { kind: 'busy' }
+  | { kind: 'sent'; email: string }
+  | { kind: 'error'; message: string; field: 'email' | 'password' | null };
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function Login({ onDemo }: { onDemo: () => void }) {
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [state, setState] = useState<State>({ kind: 'idle' });
 
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  function checkEmail(): string | null {
     const value = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      setState({ kind: 'error', message: 'Vpiši veljaven e-naslov.' });
+    if (!EMAIL_RE.test(value)) {
+      setState({ kind: 'error', message: 'Vpiši veljaven e-naslov.', field: 'email' });
+      return null;
+    }
+    return value;
+  }
+
+  async function signIn(e: FormEvent) {
+    e.preventDefault();
+    const value = checkEmail();
+    if (!value) return;
+    if (!password) {
+      setState({ kind: 'error', message: 'Vpiši geslo.', field: 'password' });
       return;
     }
-    setState({ kind: 'sending' });
+    setState({ kind: 'busy' });
+    const { error } = await supabase.auth.signInWithPassword({ email: value, password });
+    if (error) {
+      setState({
+        kind: 'error',
+        field: 'password',
+        message: /invalid login credentials/i.test(error.message)
+          ? 'E-naslov ali geslo ni pravilno. Če gesla še nimaš, spodaj pošlji povezavo po e-pošti in ga nato nastavi pod »Geslo«.'
+          : /rate limit|too many/i.test(error.message)
+            ? 'Preveč poskusov v kratkem času. Počakaj nekaj minut in poskusi znova.'
+            : `Prijava ni uspela: ${error.message}`,
+      });
+    }
+    // Ob uspehu App sam zazna novo sejo (onAuthStateChange) in prikaže portfelj.
+  }
+
+  async function sendLink() {
+    const value = checkEmail();
+    if (!value) return;
+    setState({ kind: 'busy' });
     const { error } = await supabase.auth.signInWithOtp({
       email: value,
       options: { emailRedirectTo: window.location.origin + import.meta.env.BASE_URL },
@@ -25,11 +65,14 @@ export function Login({ onDemo }: { onDemo: () => void }) {
         : /signups not allowed/i.test(error.message)
           ? 'Ta e-naslov nima dostopa do aplikacije.'
           : `Pošiljanje ni uspelo: ${error.message}`;
-      setState({ kind: 'error', message });
+      setState({ kind: 'error', message, field: 'email' });
       return;
     }
     setState({ kind: 'sent', email: value });
   }
+
+  const err = state.kind === 'error' ? state : null;
+  const field = 'mt-1.5 block min-h-11 w-full rounded-xl border border-line bg-surface px-3.5 text-base';
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-4 py-12">
@@ -37,115 +80,70 @@ export function Login({ onDemo }: { onDemo: () => void }) {
       <h1 className="mt-6 text-2xl font-semibold">Portfelj</h1>
 
       {state.kind === 'sent' ? (
-        <CodeForm email={state.email} onBack={() => setState({ kind: 'idle' })} />
+        <div role="status" className="mt-6 rounded-2xl border border-line bg-surface p-5">
+          <p className="font-medium">Preveri e-pošto</p>
+          <p className="mt-1 text-sm text-ink-2">
+            Na <strong>{state.email}</strong> sva poslala povezavo za prijavo. Odpri jo na tej napravi (na iPhonu v
+            Safariju), nato si pod <strong>Geslo</strong> nastavi geslo za prijavo v aplikaciji.
+          </p>
+          <button type="button" className="mt-4 text-sm text-accent underline" onClick={() => setState({ kind: 'idle' })}>
+            Nazaj
+          </button>
+        </div>
       ) : (
-        <form onSubmit={submit} noValidate className="mt-6">
-          <label htmlFor="email" className="text-sm font-medium">
+        <form onSubmit={signIn} noValidate className="mt-6 space-y-4">
+          <label className="block text-sm font-medium">
             E-naslov
+            <input
+              type="email"
+              name="email"
+              inputMode="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              aria-invalid={err?.field === 'email'}
+              aria-describedby={err ? 'login-error' : undefined}
+              className={field}
+            />
           </label>
-          <input
-            id="email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            aria-invalid={state.kind === 'error'}
-            aria-describedby={state.kind === 'error' ? 'login-error' : undefined}
-            className="mt-1.5 block min-h-11 w-full rounded-xl border border-line bg-surface px-3.5 text-base"
-          />
-          {state.kind === 'error' ? (
-            <p id="login-error" role="alert" className="mt-2 text-sm text-loss">
-              {state.message}
+          <label className="block text-sm font-medium">
+            Geslo
+            <input
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              aria-invalid={err?.field === 'password'}
+              aria-describedby={err ? 'login-error' : undefined}
+              className={field}
+            />
+          </label>
+          {err ? (
+            <p id="login-error" role="alert" className="text-sm text-loss">
+              {err.message}
             </p>
           ) : null}
           <button
             type="submit"
-            disabled={state.kind === 'sending'}
-            className="mt-4 min-h-11 w-full rounded-xl bg-ink px-4 text-sm font-semibold text-bg disabled:opacity-60"
+            disabled={state.kind === 'busy'}
+            className="min-h-11 w-full rounded-xl bg-ink px-4 text-sm font-semibold text-bg disabled:opacity-60"
           >
-            {state.kind === 'sending' ? 'Pošiljam …' : 'Pošlji kodo za prijavo'}
+            {state.kind === 'busy' ? 'Prijavljam …' : 'Prijava'}
+          </button>
+          <button
+            type="button"
+            onClick={() => void sendLink()}
+            disabled={state.kind === 'busy'}
+            className="min-h-11 w-full rounded-xl px-4 text-sm text-ink-2 hover:bg-surface-2 disabled:opacity-60"
+          >
+            Nimaš gesla? Pošlji povezavo po e-pošti
           </button>
         </form>
       )}
 
       <button type="button" onClick={onDemo} className="mt-8 text-sm text-ink-3 underline">
         Poglej demo z izmišljenimi podatki
-      </button>
-    </div>
-  );
-}
-
-/**
- * Prijava s kodo iz e-pošte. Na iPhonu se povezava iz e-pošte odpre v Safariju, ne v aplikaciji na
- * začetnem zaslonu (ta ima ločen pomnilnik) — zato je koda edini zanesljiv način prijave tam.
- */
-function CodeForm({ email, onBack }: { email: string; onBack: () => void }) {
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function verify(e: FormEvent) {
-    e.preventDefault();
-    const token = code.replace(/\s/g, '');
-    if (!/^\d{6,10}$/.test(token)) {
-      setError('Koda ima samo števke (običajno 6). Prepiši jo iz e-pošte.');
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    const { error: err } = await supabase.auth.verifyOtp({ email, token, type: 'email' });
-    setBusy(false);
-    if (err) {
-      setError(
-        /expired|invalid/i.test(err.message)
-          ? 'Koda ni pravilna ali je potekla. Preveri jo ali pošlji novo.'
-          : `Prijava ni uspela: ${err.message}`,
-      );
-    }
-    // Ob uspehu App sam zazna novo sejo (onAuthStateChange) in prikaže portfelj.
-  }
-
-  return (
-    <div className="mt-6 rounded-2xl border border-line bg-surface p-5">
-      <p role="status" className="font-medium">
-        Preveri e-pošto
-      </p>
-      <p className="mt-1 text-sm text-ink-2">
-        Na <strong>{email}</strong> sva poslala kodo za prijavo. Vpiši jo spodaj — ali odpri povezavo iz
-        sporočila na tej napravi.
-      </p>
-      <form onSubmit={verify} noValidate className="mt-4">
-        <label htmlFor="code" className="text-sm font-medium">
-          Koda iz e-pošte
-        </label>
-        <input
-          id="code"
-          type="text"
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          maxLength={12}
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          aria-invalid={error !== null}
-          aria-describedby={error ? 'code-error' : undefined}
-          className="mt-1.5 block min-h-11 w-full rounded-xl border border-line bg-bg px-3.5 text-center text-lg tracking-[0.3em] tabular-nums"
-        />
-        {error ? (
-          <p id="code-error" role="alert" className="mt-2 text-sm text-loss">
-            {error}
-          </p>
-        ) : null}
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-4 min-h-11 w-full rounded-xl bg-ink px-4 text-sm font-semibold text-bg disabled:opacity-60"
-        >
-          {busy ? 'Preverjam …' : 'Prijava'}
-        </button>
-      </form>
-      <button type="button" className="mt-4 text-sm text-accent underline" onClick={onBack}>
-        Pošlji znova
       </button>
     </div>
   );
