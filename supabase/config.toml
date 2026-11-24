@@ -253,6 +253,12 @@ otp_expiry = 3600
 # sender_name = "Admin"
 
 # Uncomment to customize email template
+# Predloga e-pošte za prijavo: vsebuje 6-mestno kodo, ker se na iPhonu povezava odpre v Safariju
+# in ne v aplikaciji na začetnem zaslonu. Na strežniku jo vpiše lastnik (docs/NASTAVITEV.md, korak 8).
+[auth.email.template.magic_link]
+subject = "Koda za prijavo v Portfelj"
+content_path = "./supabase/templates/prijava.html"
+
 # [auth.email.template.invite]
 # subject = "You have been invited"
 # content_path = "./supabase/templates/invite.html"

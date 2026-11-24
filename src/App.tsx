@@ -40,7 +40,7 @@ import { StockCard } from './ui/StockCard';
 import { TargetForm } from './ui/TargetForm';
 import { TradeForm } from './ui/TradeForm';
 
-export const APP_VERSION = 'v0.8';
+export const APP_VERSION = 'v0.8.1';
 
 /** Današnji koledarski datum v lokalnem času (ne prek toISOString). */
 function localToday(): IsoDate {
